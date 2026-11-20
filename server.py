@@ -13,6 +13,7 @@ MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
     "version": "1.6.0",
+    "bitchordAuth": True,
     "resources": ["search", "stream"],
     "settings": [
         {
