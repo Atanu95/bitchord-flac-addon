@@ -3,6 +3,7 @@
   "name": "Layz Add On",
   "version": "1.6.0",
   "resources": ["search", "stream"],
+  "bitchordAuth": true,
   "settings": [
     {
       "key": "quality",
