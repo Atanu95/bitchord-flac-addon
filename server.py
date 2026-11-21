@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.8.0",
+    "version": "1.9.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -39,13 +39,24 @@ MANIFEST = {
 IA_SEARCH = "https://archive.org/advancedsearch.php"
 IA_METADATA = "https://archive.org/metadata/{}"
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.8 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.9 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
 SEARCH_ROWS = 40
 MAX_CANDIDATES = 12
 MAX_RESULTS = 10
+REQUEST_TIMEOUT = (3, 7)
+# Only items with explicitly identified open/public-domain licensing are accepted.
+ALLOWED_LICENSE_HINTS = (
+    "creativecommons.org/publicdomain",
+    "creativecommons.org/licenses/by/",
+    "creativecommons.org/licenses/by-sa/",
+    "creativecommons.org/licenses/by-nc/",
+    "creativecommons.org/licenses/by-nd/",
+    "creativecommons.org/licenses/by-nc-sa/",
+    "creativecommons.org/licenses/by-nc-nd/",
+)
 STOP_WORDS = {"a", "an", "and", "the", "of", "to", "in", "on", "for", "with", "by", "from"}
 
 
@@ -80,6 +91,19 @@ def as_text(value):
     if isinstance(value, list):
         return " ".join(str(part) for part in value if part)
     return str(value or "")
+
+
+def license_is_open(doc):
+    """Accept only explicit public-domain or Creative Commons license hints."""
+    values = []
+    for key in ("licenseurl", "license", "rights", "copyright"):
+        value = doc.get(key)
+        if value:
+            values.append(as_text(value).lower())
+    combined = " ".join(values)
+    return any(hint in combined for hint in ALLOWED_LICENSE_HINTS) or any(
+        phrase in combined for phrase in ("public domain", "creativecommons", "cc0")
+    )
 
 
 def relevance_score(query, doc):
@@ -127,7 +151,7 @@ def relevance_score(query, doc):
     elif max(title_hits, creator_hits) < (2 / 3) and combined_hits < 0.8:
         return 0
 
-    score = title_hits * 100 + creator_hits * 75 + combined_hits * 20
+    score = title_hits * 130 + creator_hits * 65 + combined_hits * 15
     if album_tokens and q_tokens & album_tokens:
         score += 5
     return score
@@ -214,6 +238,8 @@ def get_flac(identifier, probe_header=True):
     )
     response.raise_for_status()
     data = response.json()
+    if not license_is_open(data.get("metadata", {})):
+        return None
 
     candidates = []
     for item in data.get("files", []):
@@ -270,7 +296,7 @@ def make_track(doc, flac):
 
 
 def search_docs(query, rows):
-    fields = ["identifier", "title", "creator", "album", "year", "subject"]
+    fields = ["identifier", "title", "creator", "album", "year", "subject", "licenseurl", "rights"]
     safe_query = query.replace('"', " ").strip()
     # Run a quoted title search first. Use a broad audio search only to add
     # candidates; relevance_score() below rejects unrelated items.
@@ -294,6 +320,8 @@ def search_docs(query, rows):
         response.raise_for_status()
         docs = response.json().get("response", {}).get("docs", [])
         for doc in docs:
+            if not license_is_open(doc):
+                continue
             identifier = doc.get("identifier")
             if identifier:
                 merged.setdefault(str(identifier), doc)
