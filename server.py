@@ -231,47 +231,65 @@ def inspect(identifier, item, probe_header=True):
     }
 
 
+
 def get_flac(identifier, probe_header=True):
-    response = SESSION.get(
-        IA_METADATA.format(quote(identifier, safe="")),
-        timeout=(3, 7),
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not license_is_open(data.get("metadata", {})):
+    try:
+        response = SESSION.get(
+            IA_METADATA.format(quote(identifier, safe="")),
+            timeout=(3, 7),
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if not license_is_open(data.get("metadata", {})):
+            print(f"[FLAC DEBUG] {identifier}: rejected by licence filter")
+            return None
+
+        candidates = []
+        for item in data.get("files", []):
+            name = str(item.get("name", ""))
+            if name.lower().endswith(".flac"):
+                candidates.append((name, item))
+
+        if not candidates:
+            print(f"[FLAC DEBUG] {identifier}: no FLAC files found")
+            return None
+
+        candidates.sort(
+            key=lambda pair: num(pair[1].get("size")) or 0,
+            reverse=True,
+        )
+        candidates = candidates[:2]
+
+        inspected = []
+        for name, item in candidates:
+            try:
+                result = inspect(identifier, item, probe_header=probe_header)
+                if result:
+                    inspected.append(result)
+                else:
+                    print(f"[FLAC DEBUG] {identifier}: inspect returned empty for {name}")
+            except Exception as exc:
+                print(f"[FLAC DEBUG] {identifier}: inspect failed for {name}: {exc}")
+
+        if not inspected:
+            print(f"[FLAC DEBUG] {identifier}: no inspected FLAC passed")
+            return None
+
+        inspected.sort(
+            key=lambda item: (
+                int((item.get("bitDepth") or 0) > 16),
+                item.get("bitDepth") or 0,
+                item.get("sampleRate") or 0,
+                item.get("size") or 0,
+            ),
+            reverse=True,
+        )
+        return inspected[0]
+
+    except Exception as exc:
+        print(f"[FLAC DEBUG] {identifier}: metadata/request failure: {exc}")
         return None
-
-    candidates = []
-    for item in data.get("files", []):
-        name = str(item.get("name", ""))
-        if name.lower().endswith(".flac"):
-            candidates.append((name, item))
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda pair: num(pair[1].get("size")) or 0, reverse=True)
-    # Inspect only a few files per archive item to limit nested requests.
-    candidates = candidates[:2]
-
-    inspected = []
-    for _, item in candidates:
-        try:
-            inspected.append(inspect(identifier, item, probe_header=probe_header))
-        except requests.RequestException:
-            continue
-    if not inspected:
-        return None
-
-    inspected.sort(
-        key=lambda item: (
-            int((item.get("bitDepth") or 0) > 16),
-            item.get("bitDepth") or 0,
-            item.get("sampleRate") or 0,
-            item.get("size") or 0,
-        ),
-        reverse=True,
-    )
-    return inspected[0]
 
 
 def make_track(doc, flac):
