@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.7.0",
+    "version": "1.8.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -39,12 +39,12 @@ MANIFEST = {
 IA_SEARCH = "https://archive.org/advancedsearch.php"
 IA_METADATA = "https://archive.org/metadata/{}"
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.7 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.8 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
 SEARCH_ROWS = 40
-MAX_CANDIDATES = 4
+MAX_CANDIDATES = 12
 MAX_RESULTS = 10
 STOP_WORDS = {"a", "an", "and", "the", "of", "to", "in", "on", "for", "with", "by", "from"}
 
@@ -183,7 +183,7 @@ def quality_label(sample_rate, bit_depth):
     return label + (f" · {' / '.join(details)}" if details else "")
 
 
-def inspect(identifier, item):
+def inspect(identifier, item, probe_header=True):
     name = str(item.get("name", ""))
     url = (
         f"https://archive.org/download/{quote(identifier, safe='')}/"
@@ -191,7 +191,7 @@ def inspect(identifier, item):
     )
     sample_rate = num(first(item, "sample_rate", "samplerate", "sampleRate"))
     bit_depth = num(first(item, "bit_depth", "bitdepth", "bitDepth"))
-    if sample_rate is None or bit_depth is None:
+    if probe_header and (sample_rate is None or bit_depth is None):
         detected_sr, detected_bd = flac_info(url)
         sample_rate = sample_rate if sample_rate is not None else detected_sr
         bit_depth = bit_depth if bit_depth is not None else detected_bd
@@ -207,7 +207,7 @@ def inspect(identifier, item):
     }
 
 
-def get_flac(identifier):
+def get_flac(identifier, probe_header=True):
     response = SESSION.get(
         IA_METADATA.format(quote(identifier, safe="")),
         timeout=(3, 7),
@@ -230,7 +230,7 @@ def get_flac(identifier):
     inspected = []
     for _, item in candidates:
         try:
-            inspected.append(inspect(identifier, item))
+            inspected.append(inspect(identifier, item, probe_header=probe_header))
         except requests.RequestException:
             continue
     if not inspected:
@@ -333,6 +333,8 @@ def do_search():
         "relevantDocs": len(ranked),
         "candidatesChecked": 0,
         "flacMatches": 0,
+        "checkedIdentifiers": [],
+        "matchedIdentifiers": [],
     }
     if not ranked:
         payload = {"tracks": []}
@@ -340,14 +342,16 @@ def do_search():
             payload["debug"] = debug
         return jsonify(payload)
 
-    # Only inspect the strongest matching archive records. This prevents
-    # unrelated FLAC records from leaking into results and limits worker time.
+    # Inspect more relevant records because many Archive.org audio items do not
+    # contain FLAC. During search, trust metadata and skip byte-range FLAC header
+    # probes; the stream endpoint can probe the chosen file later if needed.
     candidates = ranked[:MAX_CANDIDATES]
     debug["candidatesChecked"] = len(candidates)
+    debug["checkedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc in candidates]
     tracks_with_score = []
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {
-            pool.submit(get_flac, str(doc["identifier"])): (score, doc)
+            pool.submit(get_flac, str(doc["identifier"]), False): (score, doc)
             for score, doc in candidates
         }
         for future in as_completed(futures):
@@ -383,6 +387,7 @@ def do_search():
             break
 
     debug["flacMatches"] = len(tracks_with_score)
+    debug["matchedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc, _flac in tracks_with_score]
     payload = {"tracks": tracks}
     if debug_enabled:
         payload["debug"] = debug
