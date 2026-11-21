@@ -229,9 +229,6 @@ def inspect(identifier, item, probe_header=True):
         "bitDepth": bit_depth,
         "quality": quality(sample_rate, bit_depth),
     }
-
-
-
 def get_flac(identifier, probe_header=True):
     try:
         response = SESSION.get(
@@ -239,7 +236,7 @@ def get_flac(identifier, probe_header=True):
             timeout=(3, 7),
         )
         response.raise_for_status()
-       data = response.json()
+        data = response.json()
 
         metadata = data.get("metadata", {})
         if not license_is_open(metadata):
@@ -297,8 +294,6 @@ def get_flac(identifier, probe_header=True):
     except Exception as exc:
         print(f"[FLAC DEBUG] {identifier}: metadata/request failure: {exc}")
         return None
-
-
 def make_track(doc, flac):
     identifier = str(doc["identifier"])
     title = str(doc.get("title") or flac["filename"])
