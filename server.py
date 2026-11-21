@@ -298,13 +298,14 @@ def make_track(doc, flac):
 def search_docs(query, rows):
     fields = ["identifier", "title", "creator", "album", "year", "subject", "licenseurl", "rights"]
     safe_query = query.replace('"', " ").strip()
-    # Run a quoted title search first. Use a broad audio search only to add
-    # candidates; relevance_score() below rejects unrelated items.
+
     search_queries = [
         f'(mediatype:audio) AND title:"{safe_query}"',
         f'(mediatype:audio) AND ({safe_query})',
     ]
+
     merged = {}
+
     for ia_query in search_queries:
         response = SESSION.get(
             IA_SEARCH,
@@ -318,20 +319,19 @@ def search_docs(query, rows):
             timeout=(3, 6),
         )
         response.raise_for_status()
+
         docs = response.json().get("response", {}).get("docs", [])
+
         for doc in docs:
-            if not license_is_open(doc):
-                continue
             identifier = doc.get("identifier")
             if identifier:
                 merged.setdefault(str(identifier), doc)
-        # Don't make the second request if the title query already found a
-        # healthy set of candidates.
+
         if len(merged) >= min(rows, 12):
             break
+
     return list(merged.values())
-
-
+    
 def do_search():
     query = (request.args.get("q") or "").strip()
     if not query:
