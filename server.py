@@ -226,37 +226,83 @@ def make_track(doc, flac):
 
 
 
-def do_search():
-    query = (request.args.get("q") or "").strip()
-    if not query:
-        return jsonify({"tracks": []})
-
-    # BitChord does not require a limit parameter; it trims the returned rows.
-    try:
-        limit = min(max(int(request.args.get("limit", "20")), 1), 30)
-    except ValueError:
-        limit = 20
-
-    try:
+def search_docs(query, rows):
+    """Search Archive.org with title-focused and broad fallback queries."""
+    fields = ["identifier", "title", "creator", "album", "year"]
+    search_queries = [
+        f'(mediatype:audio) AND title:"{query}"',
+        f'(mediatype:audio) AND ({query})',
+    ]
+    merged = {}
+    for ia_query in search_queries:
         response = SESSION.get(
             IA_SEARCH,
             params={
-                "q": f"(mediatype:audio) AND ({query})",
-                "fl[]": ["identifier", "title", "creator", "album", "year"],
-                "rows": min(limit * 4, 80),
+                "q": ia_query,
+                "fl[]": fields,
+                "rows": rows,
                 "page": 1,
                 "output": "json",
             },
             timeout=(5, 20),
         )
         response.raise_for_status()
-        docs = response.json().get("response", {}).get("docs", [])
+        for doc in response.json().get("response", {}).get("docs", []):
+            identifier = doc.get("identifier")
+            if identifier:
+                merged.setdefault(str(identifier), doc)
+    return list(merged.values())
+
+
+def relevance_score(query, doc):
+    """Prioritize exact/close title matches over loosely related IA hits."""
+    q = normalized(query)
+    title = normalized(doc.get("title", ""))
+    creator = doc.get("creator", "")
+    if isinstance(creator, list):
+        creator = " ".join(map(str, creator))
+    creator = normalized(creator)
+    if not q or not title:
+        return 0
+
+    score = 0
+    if title == q:
+        score += 100
+    elif q in title or title in q:
+        score += 55
+
+    q_tokens = set(q.split())
+    title_tokens = set(title.split())
+    if q_tokens:
+        score += 35 * len(q_tokens & title_tokens) / len(q_tokens)
+
+    # Give a small preference to creator/title metadata that is not generic.
+    if creator and creator not in {"internet archive", "unknown"}:
+        score += 2
+    return score
+
+
+def do_search():
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"tracks": []})
+
+    try:
+        limit = min(max(int(request.args.get("limit", "20")), 1), 30)
+    except ValueError:
+        limit = 20
+
+    try:
+        docs = search_docs(query, min(limit * 4, 80))
     except (requests.RequestException, ValueError) as exc:
         return jsonify({"tracks": [], "error": str(exc)}), 502
 
+    # Rank candidates before checking metadata; only inspect the best candidates
+    # to reduce latency and avoid unrelated Archive items.
+    docs.sort(key=lambda doc: relevance_score(query, doc), reverse=True)
+    docs = docs[:min(max(limit * 3, 20), 60)]
+
     tracks = []
-    # Resolve several IA items concurrently so BitChord does not wait through
-    # a serial metadata request for every non-FLAC search hit.
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {}
         for doc in docs:
@@ -264,23 +310,41 @@ def do_search():
             if identifier:
                 futures[pool.submit(get_flac, str(identifier))] = doc
 
+        completed = []
         for future in as_completed(futures):
             doc = futures[future]
             try:
                 flac = future.result()
-            except requests.RequestException:
-                continue
             except Exception:
                 continue
-            if not flac:
-                continue
+            if flac:
+                completed.append((relevance_score(query, doc), doc, flac))
 
-            tracks.append(make_track(doc, flac))
-            if len(tracks) >= limit:
-                break
+    # Relevance first; within similarly relevant items, prefer better audio.
+    completed.sort(
+        key=lambda entry: (
+            entry[0],
+            int((entry[2].get("bitDepth") or 0) > 16),
+            entry[2].get("bitDepth") or 0,
+            entry[2].get("sampleRate") or 0,
+            entry[2].get("size") or 0,
+        ),
+        reverse=True,
+    )
+
+    seen_titles = set()
+    for _, doc, flac in completed:
+        title_key = normalized(doc.get("title", ""))
+        # Remove repeated titles where the archive search returns duplicates.
+        if title_key and title_key in seen_titles:
+            continue
+        if title_key:
+            seen_titles.add(title_key)
+        tracks.append(make_track(doc, flac))
+        if len(tracks) >= limit:
+            break
 
     return jsonify({"tracks": tracks})
-
 
 
 def do_stream(identifier):
@@ -334,6 +398,19 @@ def search():
 
 
 @app.get("/stream/<path:identifier>")
+def stream(identifier):
+    return do_stream(identifier)
+
+
+# Compatibility with older addon examples that used /stream?id=...
+@app.get("/stream")
+def stream_query():
+    return do_stream(request.args.get("id"))
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
+
 def stream(identifier):
     return do_stream(identifier)
 
