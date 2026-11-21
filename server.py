@@ -241,9 +241,17 @@ def get_flac(identifier, probe_header=True):
         response.raise_for_status()
         data = response.json()
 
-        if not license_is_open(data.get("metadata", {})):
-            print(f"[FLAC DEBUG] {identifier}: rejected by licence filter")
-            return None
+       metadata = data.get("metadata", {})
+
+if not license_is_open(metadata):
+    print(
+        f"[FLAC DEBUG] {identifier}: rejected by licence filter; "
+        f"license={metadata.get('license')}; "
+        f"licenseurl={metadata.get('licenseurl')}; "
+        f"rights={metadata.get('rights')}; "
+        f"copyright={metadata.get('copyright')}"
+    )
+    return None
 
         candidates = []
         for item in data.get("files", []):
