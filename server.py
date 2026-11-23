@@ -332,6 +332,8 @@ def make_track(doc, flac):
         "title": title,
         "artist": creator,
         "album": str(doc.get("album") or ""),
+        "year": num(doc.get("year")),
+        "source": "Internet Archive",
         "duration": flac.get("length"),
         "artworkURL": f"https://archive.org/services/img/{quote(identifier, safe='')}",
         "format": "flac",
@@ -344,17 +346,184 @@ def make_track(doc, flac):
     }
 
 
-def search_docs(query, rows):
+def jamendo_license_is_allowed(track):
+    """Accept only explicit, recognised Creative Commons licences."""
+    license_url = str(track.get("license_ccurl") or "").strip().lower()
+    allowed = (
+        "creativecommons.org/publicdomain/zero/",
+        "creativecommons.org/licenses/by/",
+        "creativecommons.org/licenses/by-sa/",
+        "creativecommons.org/licenses/by-nc/",
+        "creativecommons.org/licenses/by-nd/",
+        "creativecommons.org/licenses/by-nc-sa/",
+        "creativecommons.org/licenses/by-nc-nd/",
+    )
+    return any(marker in license_url for marker in allowed)
+
+
+def inspect_jamendo_track(item, year_from, year_to, probe_header=True):
+    """Build a BitChord track only from a licensed Jamendo FLAC stream."""
+    if not jamendo_license_is_allowed(item):
+        return None, "licence"
+
+    releasedate = str(item.get("releasedate") or "")
+    year_match = re.match(r"^(\\d{4})", releasedate)
+    release_year = int(year_match.group(1)) if year_match else None
+    if release_year is None or not year_from <= release_year <= year_to:
+        return None, "year"
+
+    stream_url = str(item.get("audio") or "").strip()
+    if not stream_url.startswith("https://"):
+        return None, "stream"
+
+    sample_rate = None
+    bit_depth = None
+    if probe_header:
+        sample_rate, bit_depth = flac_info(stream_url)
+
+    track_id = str(item.get("id") or "").strip()
+    if not track_id.isdigit():
+        return None, "id"
+
+    artist = str(item.get("artist_name") or "Unknown artist")
+    title = str(item.get("name") or "Untitled")
+    track_page = str(item.get("shareurl") or f"https://www.jamendo.com/track/{track_id}")
+    artist_id = str(item.get("artist_id") or "").strip()
+    artist_page = (
+        str(item.get("artist_shareurl") or f"https://www.jamendo.com/artist/{artist_id}")
+        if artist_id else "https://www.jamendo.com/"
+    )
+    album_image = str(item.get("album_image") or item.get("image") or "")
+
+    return {
+        "id": f"jamendo-{track_id}",
+        "title": title,
+        "artist": artist,
+        "album": str(item.get("album_name") or ""),
+        "year": release_year,
+        "source": "Jamendo",
+        "duration": num(item.get("duration")),
+        "artworkURL": album_image,
+        "format": "flac",
+        "audioQuality": "LOSSLESS",
+        "quality": quality_label(sample_rate, bit_depth),
+        "sampleRate": sample_rate,
+        "bitDepth": bit_depth,
+        "bitrate": None,
+        "streamURL": stream_url,
+        "trackURL": track_page,
+        "artistURL": artist_page,
+        "licenseURL": str(item.get("license_ccurl") or ""),
+        "attribution": f"{artist} / Jamendo",
+    }, None
+
+
+def jamendo_api_request(params):
+    if not JAMENDO_CLIENT_ID:
+        return None, "JAMENDO_CLIENT_ID is not configured"
+    request_params = dict(params)
+    request_params["client_id"] = JAMENDO_CLIENT_ID
+    request_params["format"] = "json"
+    try:
+        response = SESSION.get(JAMENDO_TRACKS, params=request_params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        print(f"[JAMENDO DEBUG] API request failed: {exc}")
+        return None, str(exc)
+
+    headers = payload.get("headers", {})
+    if headers.get("status") not in (None, "success"):
+        message = str(headers.get("error_message") or "Jamendo API returned an error")
+        print(f"[JAMENDO DEBUG] API error: {message}")
+        return None, message
+    return payload.get("results", []), None
+
+
+def jamendo_search(query, limit, year_from, year_to, probe_header=True):
+    """Search Jamendo's documented FLAC stream field, retaining CC-licensed tracks."""
+    stats = {
+        "configured": bool(JAMENDO_CLIENT_ID),
+        "apiCandidates": 0,
+        "licenceRejected": 0,
+        "yearRejected": 0,
+        "missingStream": 0,
+        "flacMatches": 0,
+        "hiResMatches": 0,
+        "error": None,
+    }
+    if not JAMENDO_CLIENT_ID:
+        return [], stats
+
+    params = {
+        "search": query,
+        "limit": min(max(limit * 3, 15), 60),
+        "type": "single albumtrack",
+        "datebetween": f"{year_from}-01-01_{year_to}-12-31",
+        "audioformat": "flac",
+        "include": "licenses",
+        "imagesize": 500,
+    }
+    items, error = jamendo_api_request(params)
+    if items is None:
+        stats["error"] = error
+        return [], stats
+
+    stats["apiCandidates"] = len(items)
+    results = []
+    for item in items:
+        if not jamendo_license_is_allowed(item):
+            stats["licenceRejected"] += 1
+            continue
+        checked, reason = inspect_jamendo_track(item, year_from, year_to, probe_header)
+        if checked is None:
+            if reason == "year":
+                stats["yearRejected"] += 1
+            elif reason == "stream":
+                stats["missingStream"] += 1
+            continue
+        stats["flacMatches"] += 1
+        if is_hires(checked.get("sampleRate"), checked.get("bitDepth")):
+            stats["hiResMatches"] += 1
+        results.append(checked)
+    return results, stats
+
+
+def get_jamendo_flac(track_id, probe_header=True):
+    """Resolve a Jamendo track ID through the official tracks API, not a guessed URL."""
+    if not JAMENDO_CLIENT_ID or not str(track_id).isdigit():
+        return None
+    params = {
+        "id": str(track_id),
+        "limit": 1,
+        "type": "single albumtrack",
+        "datebetween": f"{MIN_RELEASE_YEAR}-01-01_{MAX_RELEASE_YEAR}-12-31",
+        "audioformat": "flac",
+        "include": "licenses",
+        "imagesize": 500,
+    }
+    items, error = jamendo_api_request(params)
+    if not items:
+        if error:
+            print(f"[JAMENDO DEBUG] Track lookup failed for {track_id}: {error}")
+        return None
+    track, reason = inspect_jamendo_track(
+        items[0], MIN_RELEASE_YEAR, MAX_RELEASE_YEAR, probe_header
+    )
+    if track is None:
+        print(f"[JAMENDO DEBUG] Track {track_id} rejected: {reason}")
+    return track
+
+
+def search_docs(query, rows, year_from=MIN_RELEASE_YEAR, year_to=MAX_RELEASE_YEAR):
     fields = ["identifier", "title", "creator", "album", "year", "subject", "licenseurl", "rights"]
     safe_query = query.replace('"', " ").strip()
-
+    year_filter = f"year:[{year_from} TO {year_to}]"
     search_queries = [
-        f'(mediatype:audio) AND title:"{safe_query}"',
-        f'(mediatype:audio) AND ({safe_query})',
+        f'(mediatype:audio) AND {year_filter} AND title:"{safe_query}"',
+        f'(mediatype:audio) AND {year_filter} AND ({safe_query})',
     ]
-
     merged = {}
-
     for ia_query in search_queries:
         response = SESSION.get(
             IA_SEARCH,
@@ -368,17 +537,14 @@ def search_docs(query, rows):
             timeout=(3, 6),
         )
         response.raise_for_status()
-
         docs = response.json().get("response", {}).get("docs", [])
-
         for doc in docs:
             identifier = doc.get("identifier")
-            if identifier:
+            year = num(doc.get("year"))
+            if identifier and year is not None and year_from <= year <= year_to:
                 merged.setdefault(str(identifier), doc)
-
         if len(merged) >= min(rows, 12):
             break
-
     return list(merged.values())
 
 
@@ -389,86 +555,141 @@ def do_search():
 
     try:
         limit = min(max(int(request.args.get("limit", "10")), 1), MAX_RESULTS)
+        year_from = int(request.args.get("year_from", str(MIN_RELEASE_YEAR)))
+        year_to = int(request.args.get("year_to", str(MAX_RELEASE_YEAR)))
     except ValueError:
-        limit = MAX_RESULTS
+        return jsonify({"tracks": [], "error": "limit, year_from and year_to must be integers"}), 400
 
-    try:
-        docs = search_docs(query, SEARCH_ROWS)
-    except (requests.RequestException, ValueError) as exc:
-        return jsonify({"tracks": [], "error": str(exc)}), 502
-
-    ranked = [
-        (relevance_score(query, doc), doc)
-        for doc in docs
-    ]
-    ranked = [(score, doc) for score, doc in ranked if score > 0]
-    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    year_from = max(MIN_RELEASE_YEAR, min(year_from, MAX_RELEASE_YEAR))
+    year_to = max(MIN_RELEASE_YEAR, min(year_to, MAX_RELEASE_YEAR))
+    if year_from > year_to:
+        return jsonify({"tracks": [], "error": "year_from must not exceed year_to"}), 400
 
     quality_mode = (request.args.get("quality") or "lossless").strip().lower()
+    if quality_mode in ("hi-res", "hi_res", "high-res"):
+        quality_mode = "hires"
+    if quality_mode not in ("lossless", "high", "low", "hires"):
+        quality_mode = "lossless"
+
+    source_mode = (request.args.get("source") or "all").strip().lower()
+    if source_mode not in ("all", "archive", "internet-archive", "internet_archive", "jamendo"):
+        return jsonify({"tracks": [], "error": "source must be all, archive or jamendo"}), 400
+    use_archive = source_mode in ("all", "archive", "internet-archive", "internet_archive")
+    use_jamendo = source_mode in ("all", "jamendo")
+
     debug_enabled = request.args.get("debug") == "1"
     debug = {
         "query": query,
+        "sourceMode": source_mode,
         "qualityMode": quality_mode,
-        "archiveDocs": len(docs),
-        "relevantDocs": len(ranked),
+        "yearFrom": year_from,
+        "yearTo": year_to,
+        "archiveDocs": 0,
+        "relevantDocs": 0,
         "candidatesChecked": 0,
+        "archiveFlacMatches": 0,
+        "jamendoConfigured": bool(JAMENDO_CLIENT_ID),
+        "jamendoApiCandidates": 0,
+        "jamendoLicenceRejected": 0,
+        "jamendoYearRejected": 0,
+        "jamendoMissingStream": 0,
+        "jamendoFlacMatches": 0,
+        "jamendoHiResMatches": 0,
         "flacMatches": 0,
-        "qualityMatches": 0,
         "hiResMatches": 0,
+        "qualityMatches": 0,
         "qualityFilteredOut": 0,
+        "returnedTracks": 0,
+        "duplicateTracksSkipped": 0,
         "checkedIdentifiers": [],
         "matchedIdentifiers": [],
     }
-    if not ranked:
-        payload = {"tracks": []}
-        if debug_enabled:
-            payload["debug"] = debug
-        return jsonify(payload)
 
-    # Probe FLAC STREAMINFO during search so returned results can show
-    # verified sample rate and bit depth. flac_info uses a small byte range.
-    candidates = ranked[:MAX_CANDIDATES]
-    debug["candidatesChecked"] = len(candidates)
-    debug["checkedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc in candidates]
-    tracks_with_score = []
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {
-            pool.submit(get_flac, str(doc["identifier"]), True): (score, doc)
-            for score, doc in candidates
-        }
-        for future in as_completed(futures):
-            score, doc = futures[future]
-            try:
-                flac = future.result()
-            except Exception:
-                continue
-            if flac:
-                tracks_with_score.append((score, doc, flac))
+    combined = []
+    if use_archive:
+        try:
+            docs = search_docs(query, SEARCH_ROWS, year_from, year_to)
+        except (requests.RequestException, ValueError) as exc:
+            print(f"[ARCHIVE DEBUG] Search request failed: {exc}")
+            docs = []
+            debug["archiveError"] = str(exc)
+        ranked = [
+            (relevance_score(query, doc), doc)
+            for doc in docs
+        ]
+        ranked = [(score, doc) for score, doc in ranked if score > 0]
+        ranked.sort(key=lambda pair: pair[0], reverse=True)
+        debug["archiveDocs"] = len(docs)
+        debug["relevantDocs"] = len(ranked)
 
-    raw_flac_matches = len(tracks_with_score)
+        candidates = ranked[:MAX_CANDIDATES]
+        debug["candidatesChecked"] = len(candidates)
+        debug["checkedIdentifiers"] = [
+            str(doc.get("identifier", "")) for _score, doc in candidates
+        ]
+        archive_matches = []
+        if candidates:
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                futures = {
+                    pool.submit(get_flac, str(doc["identifier"]), True): (score, doc)
+                    for score, doc in candidates
+                }
+                for future in as_completed(futures):
+                    score, doc = futures[future]
+                    try:
+                        flac = future.result()
+                    except Exception as exc:
+                        print(f"[ARCHIVE DEBUG] Candidate inspection failed: {exc}")
+                        continue
+                    if flac:
+                        archive_matches.append((score, make_track(doc, flac)))
+        debug["archiveFlacMatches"] = len(archive_matches)
+        combined.extend(archive_matches)
+
+    if use_jamendo:
+        jamendo_tracks, jamendo_stats = jamendo_search(
+            query, limit, year_from, year_to, probe_header=True
+        )
+        debug["jamendoConfigured"] = jamendo_stats["configured"]
+        debug["jamendoApiCandidates"] = jamendo_stats["apiCandidates"]
+        debug["jamendoLicenceRejected"] = jamendo_stats["licenceRejected"]
+        debug["jamendoYearRejected"] = jamendo_stats["yearRejected"]
+        debug["jamendoMissingStream"] = jamendo_stats["missingStream"]
+        debug["jamendoFlacMatches"] = jamendo_stats["flacMatches"]
+        debug["jamendoHiResMatches"] = jamendo_stats["hiResMatches"]
+        if jamendo_stats.get("error"):
+            debug["jamendoError"] = jamendo_stats["error"]
+        for track in jamendo_tracks:
+            doc_for_score = {
+                "title": track.get("title", ""),
+                "creator": track.get("artist", ""),
+                "album": track.get("album", ""),
+            }
+            score = relevance_score(query, doc_for_score) or 50
+            combined.append((score, track))
+
+    raw_flac_matches = len(combined)
     raw_hires_matches = sum(
-        1 for _score, _doc, flac in tracks_with_score
-        if is_hires(flac.get("sampleRate"), flac.get("bitDepth"))
+        1 for _score, track in combined
+        if is_hires(track.get("sampleRate"), track.get("bitDepth"))
     )
     if quality_mode == "hires":
-        # Hi-Res mode is strict: return only files with verified 24-bit AND 96 kHz metadata.
-        tracks_with_score = [
-            entry for entry in tracks_with_score
-            if is_hires(entry[2].get("sampleRate"), entry[2].get("bitDepth"))
+        combined = [
+            entry for entry in combined
+            if is_hires(entry[1].get("sampleRate"), entry[1].get("bitDepth"))
         ]
 
     debug["flacMatches"] = raw_flac_matches
-    debug["qualityMatches"] = len(tracks_with_score)
     debug["hiResMatches"] = raw_hires_matches
-    debug["qualityFilteredOut"] = raw_flac_matches - len(tracks_with_score)
+    debug["qualityMatches"] = len(combined)
+    debug["qualityFilteredOut"] = raw_flac_matches - len(combined)
 
-    tracks_with_score.sort(
+    combined.sort(
         key=lambda entry: (
-            int((entry[2].get("bitDepth") or 0) >= 24),
-            entry[2].get("bitDepth") or 0,
-            entry[2].get("sampleRate") or 0,
+            int((entry[1].get("bitDepth") or 0) >= 24),
+            entry[1].get("bitDepth") or 0,
+            entry[1].get("sampleRate") or 0,
             entry[0],
-            entry[2].get("size") or 0,
         ),
         reverse=True,
     )
@@ -476,28 +697,36 @@ def do_search():
     tracks = []
     seen_recordings = set()
     duplicate_tracks_skipped = 0
-    for _score, doc, flac in tracks_with_score:
-        title_key = normalized(doc.get("title", ""))
-        creator_key = normalized(as_text(doc.get("creator", "")))
-        # Only collapse records when both title and creator are known.
-        recording_key = (title_key, creator_key) if title_key and creator_key else (str(doc.get("identifier", "")),)
+    for _score, track in combined:
+        title_key = normalized(track.get("title", ""))
+        artist_key = normalized(track.get("artist", ""))
+        recording_key = (
+            (title_key, artist_key)
+            if title_key and artist_key
+            else (str(track.get("id", "")),)
+        )
         if recording_key in seen_recordings:
             duplicate_tracks_skipped += 1
             continue
         seen_recordings.add(recording_key)
-        tracks.append(make_track(doc, flac))
+        tracks.append(track)
         if len(tracks) >= limit:
             break
 
     debug["returnedTracks"] = len(tracks)
     debug["duplicateTracksSkipped"] = duplicate_tracks_skipped
-    debug["tracksWithBitDepth"] = sum(1 for track in tracks if track.get("bitDepth") is not None)
-    debug["tracksWithSampleRate"] = sum(1 for track in tracks if track.get("sampleRate") is not None)
+    debug["tracksWithBitDepth"] = sum(
+        1 for track in tracks if track.get("bitDepth") is not None
+    )
+    debug["tracksWithSampleRate"] = sum(
+        1 for track in tracks if track.get("sampleRate") is not None
+    )
     debug["hiResTracks"] = sum(
         1 for track in tracks
         if is_hires(track.get("sampleRate"), track.get("bitDepth"))
     )
-    debug["matchedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc, _flac in tracks_with_score]
+    debug["matchedIdentifiers"] = [str(track.get("id", "")) for _score, track in combined]
+
     payload = {"tracks": tracks}
     if debug_enabled:
         payload["debug"] = debug
@@ -508,6 +737,30 @@ def do_stream(identifier):
     identifier = (identifier or "").strip()
     if not identifier:
         return jsonify({"error": "missing id"}), 400
+
+    if identifier.startswith("jamendo-"):
+        track_id = identifier[len("jamendo-"):]
+        flac = get_jamendo_flac(track_id, probe_header=True)
+        if not flac:
+            return jsonify({"error": "No licensed Jamendo FLAC stream found for this item"}), 404
+        return jsonify({
+            "url": flac["streamURL"],
+            "format": "flac",
+            "quality": flac.get("quality", "LOSSLESS"),
+            "audioQuality": flac.get("audioQuality", "LOSSLESS"),
+            "codec": "flac",
+            "container": "flac",
+            "manifest": "none",
+            "encrypted": False,
+            "sampleRate": flac.get("sampleRate"),
+            "bitDepth": flac.get("bitDepth"),
+            "bitrate": flac.get("bitrate"),
+            "audioMode": "stereo",
+            "source": "Jamendo",
+            "trackURL": flac.get("trackURL"),
+            "licenseURL": flac.get("licenseURL"),
+        })
+
     try:
         flac = get_flac(identifier)
     except requests.RequestException as exc:
