@@ -291,7 +291,16 @@ def get_flac(identifier, probe_header=True):
             ),
             reverse=True,
         )
-        return inspected[0]
+        best = inspected[0]
+        # Probe only the selected FLAC file to limit extra Archive.org requests.
+        if probe_header and (best.get("sampleRate") is None or best.get("bitDepth") is None):
+            detected_sr, detected_bd = flac_info(best["url"])
+            if best.get("sampleRate") is None:
+                best["sampleRate"] = detected_sr
+            if best.get("bitDepth") is None:
+                best["bitDepth"] = detected_bd
+            best["quality"] = quality(best.get("sampleRate"), best.get("bitDepth"))
+        return best
 
     except Exception as exc:
         print(f"[FLAC DEBUG] {identifier}: metadata/request failure: {exc}")
@@ -445,6 +454,13 @@ def do_search():
     debug["flacMatches"] = len(tracks_with_score)
     debug["returnedTracks"] = len(tracks)
     debug["duplicateTracksSkipped"] = duplicate_tracks_skipped
+    debug["tracksWithBitDepth"] = sum(1 for track in tracks if track.get("bitDepth") is not None)
+    debug["tracksWithSampleRate"] = sum(1 for track in tracks if track.get("sampleRate") is not None)
+    debug["hiResTracks"] = sum(
+        1 for track in tracks
+        if (track.get("bitDepth") is not None and track["bitDepth"] > 16)
+        or (track.get("sampleRate") is not None and track["sampleRate"] > 48000)
+    )
     debug["matchedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc, _flac in tracks_with_score]
     payload = {"tracks": tracks}
     if debug_enabled:
