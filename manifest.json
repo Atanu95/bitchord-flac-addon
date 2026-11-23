@@ -1,7 +1,7 @@
 {
   "id": "bitchord-internet-archive-flac",
   "name": "Layz Add On",
-  "version": "1.6.0",
+  "version": "1.12.0",
   "resources": ["search", "stream"],
   "bitchordAuth": true,
   "settings": [
@@ -12,7 +12,18 @@
       "options": [
         {"label": "Lossless", "value": "lossless"},
         {"label": "High", "value": "high"},
+        {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"},
         {"label": "Low", "value": "low"}
+      ]
+    },
+    {
+      "key": "source",
+      "type": "select",
+      "default": "all",
+      "options": [
+        {"label": "All FLAC Sources", "value": "all"},
+        {"label": "Internet Archive", "value": "archive"},
+        {"label": "Jamendo", "value": "jamendo"}
       ]
     }
   ]
