@@ -29,9 +29,7 @@ MANIFEST = {
             "default": "lossless",
             "options": [
                 {"label": "Lossless", "value": "lossless"},
-                {"label": "High", "value": "high"},
                 {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"},
-                {"label": "Low", "value": "low"},
             ],
         },
         {
@@ -476,7 +474,7 @@ def jamendo_search(query, limit, year_from, year_to, probe_header=True):
             stats["licenceRejected"] += 1
             continue
         releasedate = str(item.get("releasedate") or "")
-        year_match = re.match(r"^(\\d{4})", releasedate)
+        year_match = re.match(r"^(\d{4})", releasedate)
         release_year = int(year_match.group(1)) if year_match else None
         if release_year is None or not year_from <= release_year <= year_to:
             stats["yearRejected"] += 1
