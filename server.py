@@ -579,7 +579,7 @@ def search_docs(query, rows, year_from=MIN_RELEASE_YEAR, year_to=MAX_RELEASE_YEA
 def build_genre_query(query, genre):
     """Expand a source search for a selected catalogue genre without changing the user's query."""
     clean_query = (query or "").strip()
-    if genre == "bollywood" and not re.search(r"\\bbollywood\\b", clean_query, re.IGNORECASE):
+    if genre == "bollywood" and not re.search(r"\bbollywood\b", clean_query, re.IGNORECASE):
         return f"Bollywood {clean_query}".strip()
     return clean_query
 
@@ -833,7 +833,7 @@ def youtube_music_search():
     genre = (request.args.get("genre") or "bollywood").strip().lower()
     if not query:
         query = "Bollywood"
-    elif genre == "bollywood" and not re.search(r"\\bbollywood\\b", query, re.IGNORECASE):
+    elif genre == "bollywood" and not re.search(r"\bbollywood\b", query, re.IGNORECASE):
         query = f"Bollywood {query}"
     return redirect(
         "https://music.youtube.com/search?q=" + quote(query, safe=""),
