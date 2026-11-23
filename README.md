@@ -96,7 +96,7 @@ Jamendo API use is subject to Jamendo's API terms and each track's Creative Comm
 
 ## Bollywood discovery (2008–2026)
 
-The manifest includes a **Bollywood (2008–2026)** genre preset. Selecting it prefixes the catalogue query with `Bollywood` and keeps the selected release-year window. Results still come only from the configured FLAC catalogues and must pass the existing source-specific licence checks; this is not a complete commercial Bollywood catalogue.
+The manifest includes a **Bollywood (2008–2026)** genre preset. It first searches with the `Bollywood` genre term; if no relevant tracks are found, it retries using the original artist/song query. Internet Archive also receives both query forms. Jamendo results are deduplicated and must match the requested title or artist. Results still come only from configured FLAC catalogues and must pass their source-specific licence checks; this is not a complete commercial Bollywood catalogue.
 
 For broader discovery of commercial Bollywood music, use the official YouTube Music search redirect:
 
