@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.13.1",
+    "version": "1.13.2",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -61,7 +61,7 @@ JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "").strip()
 MIN_RELEASE_YEAR = 2008
 MAX_RELEASE_YEAR = 2026
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.13.1 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.13.2 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
@@ -584,6 +584,13 @@ def build_genre_query(query, genre):
     return clean_query
 
 
+def build_search_variants(query, genre):
+    """Try the genre-qualified search first, then the original query as a broader fallback."""
+    original = (query or "").strip()
+    expanded = build_genre_query(original, genre)
+    return [expanded] if expanded.casefold() == original.casefold() else [expanded, original]
+
+
 def do_search():
     query = (request.args.get("q") or "").strip()
     if not query:
@@ -625,6 +632,9 @@ def do_search():
         "qualityMode": quality_mode,
         "genreMode": genre_mode,
         "sourceSearchQuery": search_query,
+        "searchVariants": build_search_variants(query, genre_mode),
+        "jamendoFallbackUsed": False,
+        "jamendoIrrelevantSkipped": 0,
         "yearFrom": year_from,
         "yearTo": year_to,
         "archiveDocs": 0,
@@ -651,12 +661,19 @@ def do_search():
 
     combined = []
     if use_archive:
-        try:
-            docs = search_docs(search_query, SEARCH_ROWS, year_from, year_to)
-        except (requests.RequestException, ValueError) as exc:
-            print(f"[ARCHIVE DEBUG] Search request failed: {exc}")
-            docs = []
-            debug["archiveError"] = str(exc)
+        docs_by_identifier = {}
+        for archive_query in build_search_variants(query, genre_mode):
+            try:
+                found_docs = search_docs(archive_query, SEARCH_ROWS, year_from, year_to)
+            except (requests.RequestException, ValueError) as exc:
+                print(f"[ARCHIVE DEBUG] Search request failed for {archive_query!r}: {exc}")
+                debug["archiveError"] = str(exc)
+                continue
+            for doc in found_docs:
+                identifier = doc.get("identifier")
+                if identifier:
+                    docs_by_identifier.setdefault(str(identifier), doc)
+        docs = list(docs_by_identifier.values())[:SEARCH_ROWS]
         ranked = [
             (relevance_score(query, doc), doc)
             for doc in docs
@@ -692,30 +709,67 @@ def do_search():
 
     jamendo_irrelevant_skipped = 0
     if use_jamendo:
-        jamendo_tracks, jamendo_stats = jamendo_search(
-            search_query, limit, year_from, year_to, probe_header=True
-        )
-        debug["jamendoConfigured"] = jamendo_stats["configured"]
-        debug["jamendoApiCandidates"] = jamendo_stats["apiCandidates"]
-        debug["jamendoLicenceRejected"] = jamendo_stats["licenceRejected"]
-        debug["jamendoYearRejected"] = jamendo_stats["yearRejected"]
-        debug["jamendoMissingStream"] = jamendo_stats["missingStream"]
-        debug["jamendoFlacMatches"] = jamendo_stats["flacMatches"]
-        debug["jamendoHiResMatches"] = jamendo_stats["hiResMatches"]
+        jamendo_totals = {
+            "configured": bool(JAMENDO_CLIENT_ID),
+            "apiCandidates": 0,
+            "licenceRejected": 0,
+            "yearRejected": 0,
+            "missingStream": 0,
+            "flacMatches": 0,
+            "hiResMatches": 0,
+            "error": None,
+        }
+        accepted_jamendo_ids = set()
+        jamendo_relevant_count = 0
+        jamendo_variants = build_search_variants(query, genre_mode)
+        for variant_index, jamendo_query in enumerate(jamendo_variants):
+            jamendo_tracks, variant_stats = jamendo_search(
+                jamendo_query, limit, year_from, year_to, probe_header=True
+            )
+            for counter in (
+                "apiCandidates", "licenceRejected", "yearRejected",
+                "missingStream", "flacMatches", "hiResMatches"
+            ):
+                jamendo_totals[counter] += variant_stats[counter]
+            if variant_stats.get("error"):
+                jamendo_totals["error"] = variant_stats["error"]
+
+            variant_relevant = 0
+            for track in jamendo_tracks:
+                doc_for_score = {
+                    "title": track.get("title", ""),
+                    "creator": track.get("artist", ""),
+                    "album": track.get("album", ""),
+                }
+                score = relevance_score(query, doc_for_score)
+                if score <= 0:
+                    jamendo_irrelevant_skipped += 1
+                    continue
+                track_id = str(track.get("id") or "")
+                if track_id in accepted_jamendo_ids:
+                    continue
+                accepted_jamendo_ids.add(track_id)
+                combined.append((score, track))
+                variant_relevant += 1
+                jamendo_relevant_count += 1
+
+            # If the genre-qualified request produced no relevant track, retry
+            # with the original artist/title query. Licence checks remain active.
+            if variant_index > 0 and variant_relevant:
+                debug["jamendoFallbackUsed"] = True
+            if jamendo_relevant_count:
+                break
+
+        debug["jamendoConfigured"] = jamendo_totals["configured"]
+        debug["jamendoApiCandidates"] = jamendo_totals["apiCandidates"]
+        debug["jamendoLicenceRejected"] = jamendo_totals["licenceRejected"]
+        debug["jamendoYearRejected"] = jamendo_totals["yearRejected"]
+        debug["jamendoMissingStream"] = jamendo_totals["missingStream"]
+        debug["jamendoFlacMatches"] = jamendo_totals["flacMatches"]
+        debug["jamendoHiResMatches"] = jamendo_totals["hiResMatches"]
         debug["jamendoIrrelevantSkipped"] = jamendo_irrelevant_skipped
-        if jamendo_stats.get("error"):
-            debug["jamendoError"] = jamendo_stats["error"]
-        for track in jamendo_tracks:
-            doc_for_score = {
-                "title": track.get("title", ""),
-                "creator": track.get("artist", ""),
-                "album": track.get("album", ""),
-            }
-            score = relevance_score(query, doc_for_score)
-            if score <= 0:
-                jamendo_irrelevant_skipped += 1
-                continue
-            combined.append((score, track))
+        if jamendo_totals.get("error"):
+            debug["jamendoError"] = jamendo_totals["error"]
 
     raw_flac_matches = len(combined)
     raw_hires_matches = sum(
