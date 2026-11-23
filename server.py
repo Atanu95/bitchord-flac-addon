@@ -367,7 +367,7 @@ def inspect_jamendo_track(item, year_from, year_to, probe_header=True):
         return None, "licence"
 
     releasedate = str(item.get("releasedate") or "")
-    year_match = re.match(r"^(\\d{4})", releasedate)
+    year_match = re.match(r"^(\d{4})", releasedate)
     release_year = int(year_match.group(1)) if year_match else None
     if release_year is None or not year_from <= release_year <= year_to:
         return None, "year"
