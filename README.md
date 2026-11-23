@@ -1,16 +1,45 @@
-# BitChord FLAC Addon — Internet Archive
+# Layz Add On — BitChord FLAC Sources
 
-A small self-hosted HTTP addon that searches Internet Archive for audio items
-with FLAC files and returns direct HTTPS FLAC URLs.
+A small Python/Flask HTTP addon for BitChord. It searches Internet Archive and, when configured, Jamendo for licensed FLAC streams.
 
-## Important
+## Audio quality and catalogue scope
 
-This is a **real FLAC-source project**, not a lossy-to-FLAC converter.
-It only selects files whose Internet Archive metadata/file name indicates FLAC.
+- Searches release years **2008–2026** by default. The API also accepts narrower `year_from` and `year_to` values within that range.
+- Returns actual FLAC streams only. It does not convert MP3/AAC/Opus into FLAC.
+- **Lossless** returns eligible FLAC streams.
+- **Hi-Res** is strict: a file must have verified FLAC STREAMINFO of at least **24-bit and 96 kHz**. Unknown metadata is not labelled Hi-Res.
+- Internet Archive items must pass the addon's explicit public-domain/Creative Commons licence check.
+- Jamendo tracks must have an explicit recognised Creative Commons licence URL and a release date inside the requested year range.
 
-It does **not** magically turn YouTube Music/AAC/MP3 into true lossless audio.
+This cannot guarantee every commercial song from 2008–2026. It can only return music present in these catalogues and available under the relevant licence.
 
-Use it with public-domain or appropriately licensed audio.
+## Sources
+
+### Internet Archive
+
+The addon searches Internet Archive audio metadata and only returns items with FLAC files that pass the configured public-domain/Creative Commons licence check.
+
+### Jamendo (optional)
+
+Jamendo's official API supports the FLAC stream format in the `audio` field, track searches, release-date filtering, and Creative Commons licence metadata.
+
+To enable Jamendo, create a Read Only application in the Jamendo Developer Portal and add its Client ID to your host's environment:
+
+```text
+JAMENDO_CLIENT_ID=your_application_client_id
+```
+
+For Render:
+1. Open the `bitchord-flac-addon` web service.
+2. Open **Environment**.
+3. Add `JAMENDO_CLIENT_ID` with your application's Client ID.
+4. Save changes and allow Render to redeploy.
+
+Do not put the Client ID or Client Secret into source code, and do not commit credentials. If a credential was exposed publicly, replace it in the Jamendo Developer Portal before using it.
+
+Jamendo use in this application is intended for **non-commercial use** under Jamendo's API terms. The addon returns the Jamendo track page, artist page, and licence URL for attribution. Respect each track's licence, credit the artist and Jamendo, and link back to the track page. Do not use the Jamendo API integration for offline downloads or persistent media caching.
+
+Jamendo is optional: if `JAMENDO_CLIENT_ID` is not configured, the Internet Archive source continues to work.
 
 ## Run locally
 
@@ -18,79 +47,49 @@ Use it with public-domain or appropriately licensed audio.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+export JAMENDO_CLIENT_ID="your_application_client_id"
 python server.py
 ```
 
-Then test:
-
+Test:
 - `http://127.0.0.1:8080/manifest.json`
 - `http://127.0.0.1:8080/health`
-- `http://127.0.0.1:8080/search?q=classical`
-- `http://127.0.0.1:8080/stream?id=ITEM_IDENTIFIER`
+- `http://127.0.0.1:8080/search?q=electronic&source=all&quality=lossless&debug=1`
+- `http://127.0.0.1:8080/search?q=ambient&source=jamendo&quality=hires&debug=1`
+- `http://127.0.0.1:8080/stream?id=jamendo-TRACK_ID`
 
-For Android/BitChord, the server must be reachable from the phone.
-A public HTTPS deployment is recommended.
+## Search API
 
-## BitChord
+`GET /search?q=<query>&limit=10&source=all&quality=lossless&year_from=2008&year_to=2026&debug=1`
 
-BitChord's current releases describe custom addons as user-added HTTP source
-modules and the Sources screen accepts the addon's root URL or `manifest.json`.
+Parameters:
+- `q`: required search text.
+- `limit`: maximum number of tracks to return (1–10).
+- `source`: `all` (default), `archive`, or `jamendo`.
+- `quality`: `lossless` (default) or `hires`.
+- `year_from`, `year_to`: release-year bounds, limited to 2008–2026.
+- `debug=1`: includes source counts, licence rejections, FLAC matches and quality diagnostics.
 
-Paste either:
-
-```text
-https://YOUR-DOMAIN/manifest.json
-```
-
-or:
-
-```text
-https://YOUR-DOMAIN/
-```
+Jamendo search results use IDs prefixed with `jamendo-`. The stream endpoint resolves these IDs through the Jamendo tracks API and rechecks licence/date eligibility before returning the stream.
 
 ## Deployment
 
-This project is intentionally simple so it can be deployed to most Python
-web hosts. Use:
+Use:
 
 ```bash
 gunicorn --bind 0.0.0.0:$PORT server:app
 ```
 
-## API
+## BitChord
 
-### Search
+Add the addon root URL or `manifest.json` in BitChord's custom source settings:
 
-`GET /search?q=<query>&limit=20`
-
-Returns:
-
-```json
-{
-  "tracks": [
-    {
-      "id": "archive_identifier",
-      "title": "Example",
-      "artist": "Example Artist",
-      "audioQuality": "LOSSLESS",
-      "format": "FLAC"
-    }
-  ],
-  "total": 1
-}
+```text
+https://bitchord-flac-addon-d9sw.onrender.com/
 ```
 
-### Stream
+## Important
 
-`GET /stream?id=<archive_identifier>`
+This is a real FLAC-source project, not a lossy-to-FLAC converter. YouTube Music's standard audio streams are not turned into lossless or Hi-Res files by this addon.
 
-Returns a direct `audio/flac` URL.
-
-## Compatibility note
-
-BitChord's public repository documents the custom-addon feature, but its
-private/runtime HTTP contract is not separately documented as a stable public
-API. Therefore this project exposes both a root manifest and `/manifest.json`,
-plus conventional `/search` and `/stream` endpoints. If BitChord's Test button
-reports a schema mismatch, the response shown by Test should be used to adjust
-the manifest fields to the exact build you're running.
+Jamendo API use is subject to Jamendo's API terms and each track's Creative Commons licence. Internet Archive items remain subject to their individual rights metadata.
