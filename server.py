@@ -30,6 +30,7 @@ MANIFEST = {
             "options": [
                 {"label": "Lossless", "value": "lossless"},
                 {"label": "High", "value": "high"},
+                {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"},
                 {"label": "Low", "value": "low"},
             ],
         }
@@ -194,15 +195,23 @@ def quality(_sample_rate, _bit_depth):
     return "LOSSLESS"
 
 
+def is_hires(sample_rate, bit_depth):
+    """True only when both Hi-Res thresholds are verified from metadata/header."""
+    return (
+        bit_depth is not None
+        and bit_depth >= 24
+        and sample_rate is not None
+        and sample_rate >= 96000
+    )
+
+
 def quality_label(sample_rate, bit_depth):
     details = []
     if bit_depth is not None:
         details.append(f"{bit_depth}-bit")
     if sample_rate is not None:
         details.append(f"{sample_rate / 1000:g} kHz")
-    hi_res = (bit_depth is not None and bit_depth > 16) or (
-        sample_rate is not None and sample_rate > 48000
-    )
+    hi_res = is_hires(sample_rate, bit_depth)
     label = "Hi-Res Lossless" if hi_res else "Lossless"
     return label + (f" · {' / '.join(details)}" if details else "")
 
@@ -389,13 +398,18 @@ def do_search():
     ranked = [(score, doc) for score, doc in ranked if score > 0]
     ranked.sort(key=lambda pair: pair[0], reverse=True)
 
+    quality_mode = (request.args.get("quality") or "lossless").strip().lower()
     debug_enabled = request.args.get("debug") == "1"
     debug = {
         "query": query,
+        "qualityMode": quality_mode,
         "archiveDocs": len(docs),
         "relevantDocs": len(ranked),
         "candidatesChecked": 0,
         "flacMatches": 0,
+        "qualityMatches": 0,
+        "hiResMatches": 0,
+        "qualityFilteredOut": 0,
         "checkedIdentifiers": [],
         "matchedIdentifiers": [],
     }
@@ -425,9 +439,26 @@ def do_search():
             if flac:
                 tracks_with_score.append((score, doc, flac))
 
+    raw_flac_matches = len(tracks_with_score)
+    raw_hires_matches = sum(
+        1 for _score, _doc, flac in tracks_with_score
+        if is_hires(flac.get("sampleRate"), flac.get("bitDepth"))
+    )
+    if quality_mode == "hires":
+        # Hi-Res mode is strict: return only files with verified 24-bit AND 96 kHz metadata.
+        tracks_with_score = [
+            entry for entry in tracks_with_score
+            if is_hires(entry[2].get("sampleRate"), entry[2].get("bitDepth"))
+        ]
+
+    debug["flacMatches"] = raw_flac_matches
+    debug["qualityMatches"] = len(tracks_with_score)
+    debug["hiResMatches"] = raw_hires_matches
+    debug["qualityFilteredOut"] = raw_flac_matches - len(tracks_with_score)
+
     tracks_with_score.sort(
         key=lambda entry: (
-            int((entry[2].get("bitDepth") or 0) > 16),
+            int((entry[2].get("bitDepth") or 0) >= 24),
             entry[2].get("bitDepth") or 0,
             entry[2].get("sampleRate") or 0,
             entry[0],
@@ -452,15 +483,13 @@ def do_search():
         if len(tracks) >= limit:
             break
 
-    debug["flacMatches"] = len(tracks_with_score)
     debug["returnedTracks"] = len(tracks)
     debug["duplicateTracksSkipped"] = duplicate_tracks_skipped
     debug["tracksWithBitDepth"] = sum(1 for track in tracks if track.get("bitDepth") is not None)
     debug["tracksWithSampleRate"] = sum(1 for track in tracks if track.get("sampleRate") is not None)
     debug["hiResTracks"] = sum(
         1 for track in tracks
-        if (track.get("bitDepth") is not None and track["bitDepth"] > 16)
-        or (track.get("sampleRate") is not None and track["sampleRate"] > 48000)
+        if is_hires(track.get("sampleRate"), track.get("bitDepth"))
     )
     debug["matchedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc, _flac in tracks_with_score]
     payload = {"tracks": tracks}
