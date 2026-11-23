@@ -10,14 +10,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, redirect, request
 
 app = Flask(__name__)
 
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.12.0",
+    "version": "1.13.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -42,6 +42,15 @@ MANIFEST = {
                 {"label": "Jamendo", "value": "jamendo"},
             ],
         },
+        {
+            "key": "genre",
+            "type": "select",
+            "default": "all",
+            "options": [
+                {"label": "All Music", "value": "all"},
+                {"label": "Bollywood (2008–2026)", "value": "bollywood"},
+            ],
+        },
     ],
 }
 
@@ -52,7 +61,7 @@ JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "").strip()
 MIN_RELEASE_YEAR = 2008
 MAX_RELEASE_YEAR = 2026
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.12 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.13 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
@@ -567,6 +576,14 @@ def search_docs(query, rows, year_from=MIN_RELEASE_YEAR, year_to=MAX_RELEASE_YEA
     return list(merged.values())
 
 
+def build_genre_query(query, genre):
+    """Expand a source search for a selected catalogue genre without changing the user's query."""
+    clean_query = (query or "").strip()
+    if genre == "bollywood" and not re.search(r"\\bbollywood\\b", clean_query, re.IGNORECASE):
+        return f"Bollywood {clean_query}".strip()
+    return clean_query
+
+
 def do_search():
     query = (request.args.get("q") or "").strip()
     if not query:
@@ -590,6 +607,11 @@ def do_search():
     if quality_mode not in ("lossless", "high", "low", "hires"):
         quality_mode = "lossless"
 
+    genre_mode = (request.args.get("genre") or "all").strip().lower()
+    if genre_mode not in ("all", "bollywood"):
+        return jsonify({"tracks": [], "error": "genre must be all or bollywood"}), 400
+    search_query = build_genre_query(query, genre_mode)
+
     source_mode = (request.args.get("source") or "all").strip().lower()
     if source_mode not in ("all", "archive", "internet-archive", "internet_archive", "jamendo"):
         return jsonify({"tracks": [], "error": "source must be all, archive or jamendo"}), 400
@@ -601,6 +623,8 @@ def do_search():
         "query": query,
         "sourceMode": source_mode,
         "qualityMode": quality_mode,
+        "genreMode": genre_mode,
+        "sourceSearchQuery": search_query,
         "yearFrom": year_from,
         "yearTo": year_to,
         "archiveDocs": 0,
@@ -627,7 +651,7 @@ def do_search():
     combined = []
     if use_archive:
         try:
-            docs = search_docs(query, SEARCH_ROWS, year_from, year_to)
+            docs = search_docs(search_query, SEARCH_ROWS, year_from, year_to)
         except (requests.RequestException, ValueError) as exc:
             print(f"[ARCHIVE DEBUG] Search request failed: {exc}")
             docs = []
@@ -667,7 +691,7 @@ def do_search():
 
     if use_jamendo:
         jamendo_tracks, jamendo_stats = jamendo_search(
-            query, limit, year_from, year_to, probe_header=True
+            search_query, limit, year_from, year_to, probe_header=True
         )
         debug["jamendoConfigured"] = jamendo_stats["configured"]
         debug["jamendoApiCandidates"] = jamendo_stats["apiCandidates"]
@@ -800,6 +824,21 @@ def do_stream(identifier):
         "bitrate": flac.get("bitrate"),
         "audioMode": "stereo",
     })
+
+
+@app.get("/youtube-music-search")
+def youtube_music_search():
+    """Open the official YouTube Music catalogue for broad Bollywood discovery."""
+    query = (request.args.get("q") or "").strip()
+    genre = (request.args.get("genre") or "bollywood").strip().lower()
+    if not query:
+        query = "Bollywood"
+    elif genre == "bollywood" and not re.search(r"\\bbollywood\\b", query, re.IGNORECASE):
+        query = f"Bollywood {query}"
+    return redirect(
+        "https://music.youtube.com/search?q=" + quote(query, safe=""),
+        code=302,
+    )
 
 
 @app.get("/")
