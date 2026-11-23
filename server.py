@@ -279,8 +279,9 @@ def get_flac(identifier, probe_header=True):
         inspected = []
         for name, item in candidates:
             try:
-                # Defer the byte-range probe until after selecting the best file.
-                result = inspect(identifier, item, probe_header=False)
+                # Read STREAMINFO for each of the two largest FLAC candidates
+                # so Hi-Res mode can select a smaller 24-bit/96 kHz alternative.
+                result = inspect(identifier, item, probe_header=probe_header)
                 if result:
                     inspected.append(result)
                 else:
@@ -301,16 +302,7 @@ def get_flac(identifier, probe_header=True):
             ),
             reverse=True,
         )
-        best = inspected[0]
-        # Probe only the selected FLAC file to limit extra Archive.org requests.
-        if probe_header and (best.get("sampleRate") is None or best.get("bitDepth") is None):
-            detected_sr, detected_bd = flac_info(best["url"])
-            if best.get("sampleRate") is None:
-                best["sampleRate"] = detected_sr
-            if best.get("bitDepth") is None:
-                best["bitDepth"] = detected_bd
-            best["quality"] = quality(best.get("sampleRate"), best.get("bitDepth"))
-        return best
+        return inspected[0]
 
     except Exception as exc:
         print(f"[FLAC DEBUG] {identifier}: metadata/request failure: {exc}")
