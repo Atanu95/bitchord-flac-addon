@@ -1,8 +1,11 @@
 {
   "id": "bitchord-internet-archive-flac",
   "name": "Layz Add On",
-  "version": "1.12.0",
-  "resources": ["search", "stream"],
+  "version": "1.13.0",
+  "resources": [
+    "search",
+    "stream"
+  ],
   "bitchordAuth": true,
   "settings": [
     {
@@ -10,8 +13,14 @@
       "type": "select",
       "default": "lossless",
       "options": [
-        {"label": "Lossless", "value": "lossless"},
-        {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"}
+        {
+          "label": "Lossless",
+          "value": "lossless"
+        },
+        {
+          "label": "Hi-Res (24-bit / 96 kHz)",
+          "value": "hires"
+        }
       ]
     },
     {
@@ -19,9 +28,33 @@
       "type": "select",
       "default": "all",
       "options": [
-        {"label": "All FLAC Sources", "value": "all"},
-        {"label": "Internet Archive", "value": "archive"},
-        {"label": "Jamendo", "value": "jamendo"}
+        {
+          "label": "All FLAC Sources",
+          "value": "all"
+        },
+        {
+          "label": "Internet Archive",
+          "value": "archive"
+        },
+        {
+          "label": "Jamendo",
+          "value": "jamendo"
+        }
+      ]
+    },
+    {
+      "key": "genre",
+      "type": "select",
+      "default": "all",
+      "options": [
+        {
+          "label": "All Music",
+          "value": "all"
+        },
+        {
+          "label": "Bollywood (2008–2026)",
+          "value": "bollywood"
+        }
       ]
     }
   ]
