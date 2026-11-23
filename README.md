@@ -93,3 +93,15 @@ https://bitchord-flac-addon-d9sw.onrender.com/
 This is a real FLAC-source project, not a lossy-to-FLAC converter. YouTube Music's standard audio streams are not turned into lossless or Hi-Res files by this addon.
 
 Jamendo API use is subject to Jamendo's API terms and each track's Creative Commons licence. Internet Archive items remain subject to their individual rights metadata.
+
+## Bollywood discovery (2008–2026)
+
+The manifest includes a **Bollywood (2008–2026)** genre preset. Selecting it prefixes the catalogue query with `Bollywood` and keeps the selected release-year window. Results still come only from the configured FLAC catalogues and must pass the existing source-specific licence checks; this is not a complete commercial Bollywood catalogue.
+
+For broader discovery of commercial Bollywood music, use the official YouTube Music search redirect:
+
+```text
+GET /youtube-music-search?q=<song-or-artist>&genre=bollywood
+```
+
+This endpoint redirects to YouTube Music's official search page. It does not expose or download YouTube audio and is not a lossless/FLAC stream. YouTube Music playback must happen in the official YouTube Music app/site.
