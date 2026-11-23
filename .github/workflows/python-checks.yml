@@ -1,0 +1,38 @@
+name: Python checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax-and-policy-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile Python source
+        run: python -m py_compile server.py
+      - name: Check version, provider and quality policy
+        run: |
+          python - <<'PY'
+          import server
+
+          assert server.MANIFEST["version"] == "1.12.0"
+          assert server.jamendo_license_is_allowed({
+              "license_ccurl": "https://creativecommons.org/licenses/by/4.0/"
+          })
+          assert not server.jamendo_license_is_allowed({"license_ccurl": ""})
+          assert server.is_hires(96000, 24)
+          assert server.is_hires(192000, 24)
+          assert not server.is_hires(48000, 24)
+          assert not server.is_hires(96000, 16)
+          print("Layz Add On policy checks passed.")
+          PY
