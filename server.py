@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.9.0",
+    "version": "1.10.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -39,7 +39,7 @@ MANIFEST = {
 IA_SEARCH = "https://archive.org/advancedsearch.php"
 IA_METADATA = "https://archive.org/metadata/{}"
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.9 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.10 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
@@ -229,6 +229,8 @@ def inspect(identifier, item, probe_header=True):
         "bitDepth": bit_depth,
         "quality": quality(sample_rate, bit_depth),
     }
+
+
 def get_flac(identifier, probe_header=True):
     try:
         response = SESSION.get(
@@ -294,6 +296,8 @@ def get_flac(identifier, probe_header=True):
     except Exception as exc:
         print(f"[FLAC DEBUG] {identifier}: metadata/request failure: {exc}")
         return None
+
+
 def make_track(doc, flac):
     identifier = str(doc["identifier"])
     title = str(doc.get("title") or flac["filename"])
@@ -351,7 +355,8 @@ def search_docs(query, rows):
             break
 
     return list(merged.values())
-    
+
+
 def do_search():
     query = (request.args.get("q") or "").strip()
     if not query:
@@ -390,16 +395,15 @@ def do_search():
             payload["debug"] = debug
         return jsonify(payload)
 
-    # Inspect more relevant records because many Archive.org audio items do not
-    # contain FLAC. During search, trust metadata and skip byte-range FLAC header
-    # probes; the stream endpoint can probe the chosen file later if needed.
+    # Probe FLAC STREAMINFO during search so returned results can show
+    # verified sample rate and bit depth. flac_info uses a small byte range.
     candidates = ranked[:MAX_CANDIDATES]
     debug["candidatesChecked"] = len(candidates)
     debug["checkedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc in candidates]
     tracks_with_score = []
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {
-            pool.submit(get_flac, str(doc["identifier"]), False): (score, doc)
+            pool.submit(get_flac, str(doc["identifier"]), True): (score, doc)
             for score, doc in candidates
         }
         for future in as_completed(futures):
@@ -413,28 +417,34 @@ def do_search():
 
     tracks_with_score.sort(
         key=lambda entry: (
-            entry[0],
             int((entry[2].get("bitDepth") or 0) > 16),
             entry[2].get("bitDepth") or 0,
             entry[2].get("sampleRate") or 0,
+            entry[0],
             entry[2].get("size") or 0,
         ),
         reverse=True,
     )
 
     tracks = []
-    seen_titles = set()
+    seen_recordings = set()
+    duplicate_tracks_skipped = 0
     for _score, doc, flac in tracks_with_score:
         title_key = normalized(doc.get("title", ""))
-        if title_key and title_key in seen_titles:
+        creator_key = normalized(as_text(doc.get("creator", "")))
+        # Only collapse records when both title and creator are known.
+        recording_key = (title_key, creator_key) if title_key and creator_key else (str(doc.get("identifier", "")),)
+        if recording_key in seen_recordings:
+            duplicate_tracks_skipped += 1
             continue
-        if title_key:
-            seen_titles.add(title_key)
+        seen_recordings.add(recording_key)
         tracks.append(make_track(doc, flac))
         if len(tracks) >= limit:
             break
 
     debug["flacMatches"] = len(tracks_with_score)
+    debug["returnedTracks"] = len(tracks)
+    debug["duplicateTracksSkipped"] = duplicate_tracks_skipped
     debug["matchedIdentifiers"] = [str(doc.get("identifier", "")) for _score, doc, _flac in tracks_with_score]
     payload = {"tracks": tracks}
     if debug_enabled:
