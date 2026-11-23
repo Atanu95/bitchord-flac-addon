@@ -457,7 +457,7 @@ def jamendo_search(query, limit, year_from, year_to, probe_header=True):
 
     params = {
         "search": query,
-        "limit": min(max(limit * 3, 15), 60),
+        "limit": min(max(limit * 2, 12), 30),
         "type": "single albumtrack",
         "datebetween": f"{year_from}-01-01_{year_to}-12-31",
         "audioformat": "flac",
@@ -470,22 +470,43 @@ def jamendo_search(query, limit, year_from, year_to, probe_header=True):
         return [], stats
 
     stats["apiCandidates"] = len(items)
-    results = []
+    eligible = []
     for item in items:
         if not jamendo_license_is_allowed(item):
             stats["licenceRejected"] += 1
             continue
-        checked, reason = inspect_jamendo_track(item, year_from, year_to, probe_header)
-        if checked is None:
-            if reason == "year":
-                stats["yearRejected"] += 1
-            elif reason == "stream":
-                stats["missingStream"] += 1
+        releasedate = str(item.get("releasedate") or "")
+        year_match = re.match(r"^(\\d{4})", releasedate)
+        release_year = int(year_match.group(1)) if year_match else None
+        if release_year is None or not year_from <= release_year <= year_to:
+            stats["yearRejected"] += 1
             continue
-        stats["flacMatches"] += 1
-        if is_hires(checked.get("sampleRate"), checked.get("bitDepth")):
-            stats["hiResMatches"] += 1
-        results.append(checked)
+        if not str(item.get("audio") or "").startswith("https://"):
+            stats["missingStream"] += 1
+            continue
+        eligible.append(item)
+
+    results = []
+    # Probe a few FLAC headers concurrently to keep Render response times bounded.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [
+            pool.submit(inspect_jamendo_track, item, year_from, year_to, probe_header)
+            for item in eligible
+        ]
+        for future in as_completed(futures):
+            try:
+                checked, reason = future.result()
+            except Exception as exc:
+                print(f"[JAMENDO DEBUG] Track inspection failed: {exc}")
+                continue
+            if checked is None:
+                if reason == "stream":
+                    stats["missingStream"] += 1
+                continue
+            stats["flacMatches"] += 1
+            if is_hires(checked.get("sampleRate"), checked.get("bitDepth")):
+                stats["hiResMatches"] += 1
+            results.append(checked)
     return results, stats
 
 
