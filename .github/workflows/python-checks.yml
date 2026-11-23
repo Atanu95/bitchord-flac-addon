@@ -23,8 +23,12 @@ jobs:
       - name: Check version, provider and quality policy
         run: |
           python - <<'PY'
+          import json
+          from pathlib import Path
           import server
 
+          manifest_file = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
+          assert manifest_file["version"] == "1.12.0"
           assert server.MANIFEST["version"] == "1.12.0"
           assert server.jamendo_license_is_allowed({
               "license_ccurl": "https://creativecommons.org/licenses/by/4.0/"
