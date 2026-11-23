@@ -11,7 +11,7 @@
       "default": "lossless",
       "options": [
         {"label": "Lossless", "value": "lossless"},
-        {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"},
+        {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"}
       ]
     },
     {
