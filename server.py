@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.11.0",
+    "version": "1.12.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -33,14 +33,28 @@ MANIFEST = {
                 {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"},
                 {"label": "Low", "value": "low"},
             ],
-        }
+        },
+        {
+            "key": "source",
+            "type": "select",
+            "default": "all",
+            "options": [
+                {"label": "All FLAC Sources", "value": "all"},
+                {"label": "Internet Archive", "value": "archive"},
+                {"label": "Jamendo", "value": "jamendo"},
+            ],
+        },
     ],
 }
 
 IA_SEARCH = "https://archive.org/advancedsearch.php"
 IA_METADATA = "https://archive.org/metadata/{}"
+JAMENDO_TRACKS = "https://api.jamendo.com/v3.0/tracks/"
+JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "").strip()
+MIN_RELEASE_YEAR = 2008
+MAX_RELEASE_YEAR = 2026
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.11 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.12 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
