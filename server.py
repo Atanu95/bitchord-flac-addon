@@ -270,7 +270,8 @@ def get_flac(identifier, probe_header=True):
         inspected = []
         for name, item in candidates:
             try:
-                result = inspect(identifier, item, probe_header=probe_header)
+                # Defer the byte-range probe until after selecting the best file.
+                result = inspect(identifier, item, probe_header=False)
                 if result:
                     inspected.append(result)
                 else:
