@@ -28,11 +28,19 @@ jobs:
           import server
 
           manifest_file = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
-          assert manifest_file["version"] == "1.13.0"
-          assert server.MANIFEST["version"] == "1.13.0"
+          assert manifest_file["version"] == "1.13.1"
+          assert server.MANIFEST["version"] == "1.13.1"
           assert server.build_genre_query("Arijit Singh", "bollywood") == "Bollywood Arijit Singh"
           assert server.build_genre_query("Bollywood hits", "bollywood") == "Bollywood hits"
           assert server.build_genre_query("Arijit Singh", "all") == "Arijit Singh"
+          assert server.relevance_score(
+              "Arijit Singh",
+              {"title": "Tum Hi Ho", "creator": "Arijit Singh"}
+          ) > 0
+          assert server.relevance_score(
+              "Arijit Singh",
+              {"title": "Electronic Dreams", "creator": "Unknown Artist"}
+          ) == 0
           assert server.jamendo_license_is_allowed({
               "license_ccurl": "https://creativecommons.org/licenses/by/4.0/"
           })
