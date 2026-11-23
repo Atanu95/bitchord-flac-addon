@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.10.0",
+    "version": "1.11.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -40,7 +40,7 @@ MANIFEST = {
 IA_SEARCH = "https://archive.org/advancedsearch.php"
 IA_METADATA = "https://archive.org/metadata/{}"
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.10 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.11 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
