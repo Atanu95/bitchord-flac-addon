@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.13.0",
+    "version": "1.13.1",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -61,7 +61,7 @@ JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "").strip()
 MIN_RELEASE_YEAR = 2008
 MAX_RELEASE_YEAR = 2026
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.13 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.13.1 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
@@ -638,6 +638,7 @@ def do_search():
         "jamendoMissingStream": 0,
         "jamendoFlacMatches": 0,
         "jamendoHiResMatches": 0,
+        "jamendoIrrelevantSkipped": 0,
         "flacMatches": 0,
         "hiResMatches": 0,
         "qualityMatches": 0,
@@ -689,6 +690,7 @@ def do_search():
         debug["archiveFlacMatches"] = len(archive_matches)
         combined.extend(archive_matches)
 
+    jamendo_irrelevant_skipped = 0
     if use_jamendo:
         jamendo_tracks, jamendo_stats = jamendo_search(
             search_query, limit, year_from, year_to, probe_header=True
@@ -700,6 +702,7 @@ def do_search():
         debug["jamendoMissingStream"] = jamendo_stats["missingStream"]
         debug["jamendoFlacMatches"] = jamendo_stats["flacMatches"]
         debug["jamendoHiResMatches"] = jamendo_stats["hiResMatches"]
+        debug["jamendoIrrelevantSkipped"] = jamendo_irrelevant_skipped
         if jamendo_stats.get("error"):
             debug["jamendoError"] = jamendo_stats["error"]
         for track in jamendo_tracks:
@@ -708,7 +711,10 @@ def do_search():
                 "creator": track.get("artist", ""),
                 "album": track.get("album", ""),
             }
-            score = relevance_score(query, doc_for_score) or 50
+            score = relevance_score(query, doc_for_score)
+            if score <= 0:
+                jamendo_irrelevant_skipped += 1
+                continue
             combined.append((score, track))
 
     raw_flac_matches = len(combined)
