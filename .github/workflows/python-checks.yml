@@ -28,11 +28,20 @@ jobs:
           import server
 
           manifest_file = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
-          assert manifest_file["version"] == "1.13.1"
-          assert server.MANIFEST["version"] == "1.13.1"
+          assert manifest_file["version"] == "1.13.2"
+          assert server.MANIFEST["version"] == "1.13.2"
           assert server.build_genre_query("Arijit Singh", "bollywood") == "Bollywood Arijit Singh"
           assert server.build_genre_query("Bollywood hits", "bollywood") == "Bollywood hits"
           assert server.build_genre_query("Arijit Singh", "all") == "Arijit Singh"
+          assert server.build_search_variants("Arijit Singh", "bollywood") == [
+              "Bollywood Arijit Singh", "Arijit Singh"
+          ]
+          assert server.build_search_variants("Bollywood hits", "bollywood") == [
+              "Bollywood hits"
+          ]
+          assert server.build_search_variants("Arijit Singh", "all") == [
+              "Arijit Singh"
+          ]
           assert server.relevance_score(
               "Arijit Singh",
               {"title": "Tum Hi Ho", "creator": "Arijit Singh"}
