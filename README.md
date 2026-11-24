@@ -4,7 +4,7 @@ A small Python/Flask HTTP addon for BitChord. It searches Internet Archive and, 
 
 ## Audio quality and catalogue scope
 
-- Searches release years **2008–2026** by default. The API also accepts narrower `year_from` and `year_to` values within that range.
+- Searches release years **2008–2026** by default for All Music and Bollywood. The **English (All Genres)** preset searches **2000–2026** to include early-2000s artists. The API accepts narrower `year_from` and `year_to` values within the supported 2000–2026 range.
 - Returns actual FLAC streams only. It does not convert MP3/AAC/Opus into FLAC.
 - **Lossless** returns eligible FLAC streams.
 - **Hi-Res** is strict: a file must have verified FLAC STREAMINFO of at least **24-bit and 96 kHz**. Unknown metadata is not labelled Hi-Res.
@@ -96,7 +96,7 @@ Jamendo API use is subject to Jamendo's API terms and each track's Creative Comm
 
 ## Bollywood discovery (2008–2026)
 
-The manifest includes a **Bollywood (2008–2026)** genre preset. It first searches with the `Bollywood` genre term; if no relevant tracks are found, it retries using the original artist/song query. Internet Archive also receives both query forms. Jamendo results are deduplicated and must match the requested title or artist. Results still come only from configured FLAC catalogues and must pass their source-specific licence checks; this is not a complete commercial Bollywood catalogue.
+The manifest includes **Bollywood (2008–2026)** and **English (All Genres, 2000–2026)** genre presets. English searches support artist names such as Pitbull, Akon, Sean Paul, and The Weeknd. The addon also corrects the common “Weekand” spelling to “The Weeknd”. It first searches with the `Bollywood` genre term; if no relevant tracks are found, it retries using the original artist/song query. Internet Archive also receives both query forms. Jamendo results are deduplicated and must match the requested title or artist. Results still come only from configured FLAC catalogues and must pass their source-specific licence checks; this is not a complete commercial Bollywood catalogue. English mode searches the same licensed FLAC catalogues, not commercial-label catalogues, so it cannot guarantee mainstream recordings.
 
 For broader discovery of commercial Bollywood music, use the official YouTube Music search redirect:
 
@@ -105,6 +105,10 @@ GET /youtube-music-search?q=<song-or-artist>&genre=bollywood
 ```
 
 This endpoint redirects to YouTube Music's official search page. It does not expose or download YouTube audio and is not a lossless/FLAC stream. YouTube Music playback must happen in the official YouTube Music app/site.
+
+## English-language artist search
+
+Choose **English (All Genres, 2000–2026)** and search an artist or track, for example `Pitbull`, `Akon`, `Sean Paul`, or `The Weeknd`. The preset searches the artist/title query first, then tries an English-qualified variant. Results remain limited to eligible FLAC files in Internet Archive and Jamendo and their licence checks. Mainstream commercial recordings may not be available in these free catalogues.
 
 ## Amazon Music subscriber search
 
