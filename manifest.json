@@ -1,7 +1,7 @@
 {
   "id": "bitchord-internet-archive-flac",
   "name": "Layz Add On",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "resources": [
     "search",
     "stream"
@@ -54,6 +54,10 @@
         {
           "label": "Bollywood (2008–2026)",
           "value": "bollywood"
+        },
+        {
+          "label": "English (All Genres, 2000–2026)",
+          "value": "english"
         }
       ]
     }
