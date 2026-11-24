@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.13.2",
+    "version": "1.14.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -61,7 +61,7 @@ JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "").strip()
 MIN_RELEASE_YEAR = 2008
 MAX_RELEASE_YEAR = 2026
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.13.2 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.14 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
@@ -884,6 +884,21 @@ def do_stream(identifier):
         "bitrate": flac.get("bitrate"),
         "audioMode": "stereo",
     })
+
+
+@app.get("/amazon-music-search")
+def amazon_music_search():
+    """Open the official Amazon Music India catalogue for subscriber playback."""
+    query = (request.args.get("q") or "").strip()
+    genre = (request.args.get("genre") or "bollywood").strip().lower()
+    if not query:
+        query = "Bollywood" if genre == "bollywood" else "music"
+    elif genre == "bollywood" and not re.search(r"\bbollywood\b", query, re.IGNORECASE):
+        query = f"Bollywood {query}"
+    return redirect(
+        "https://music.amazon.in/search?q=" + quote(query, safe=""),
+        code=302,
+    )
 
 
 @app.get("/youtube-music-search")
