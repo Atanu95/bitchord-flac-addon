@@ -28,8 +28,8 @@ jobs:
           import server
 
           manifest_file = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
-          assert manifest_file["version"] == "1.14.0"
-          assert server.MANIFEST["version"] == "1.14.0"
+          assert manifest_file["version"] == "1.15.0"
+          assert server.MANIFEST["version"] == "1.15.0"
           from urllib.parse import parse_qs, urlparse
 
           assert server.build_genre_query("Arijit Singh", "bollywood") == "Bollywood Arijit Singh"
@@ -51,6 +51,13 @@ jobs:
           assert server.build_search_variants("Arijit Singh", "all") == [
               "Arijit Singh"
           ]
+          assert server.build_genre_query("Pitbull", "english") == "English Pitbull"
+          assert server.build_search_variants("Pitbull", "english") == [
+              "Pitbull", "English Pitbull"
+          ]
+          assert server.normalize_artist_query("Weekand") == "The Weeknd"
+          assert server.normalize_artist_query("The Weeknd") == "The Weeknd"
+          assert "english" in [item["value"] for item in server.MANIFEST["settings"][-1]["options"]]
           assert server.relevance_score(
               "Arijit Singh",
               {"title": "Tum Hi Ho", "creator": "Arijit Singh"}
