@@ -105,3 +105,15 @@ GET /youtube-music-search?q=<song-or-artist>&genre=bollywood
 ```
 
 This endpoint redirects to YouTube Music's official search page. It does not expose or download YouTube audio and is not a lossless/FLAC stream. YouTube Music playback must happen in the official YouTube Music app/site.
+
+## Amazon Music subscriber search
+
+For commercial Bollywood catalogue discovery, the addon provides an external redirect to Amazon Music India's official search page:
+
+```text
+GET /amazon-music-search?q=<song-or-artist>&genre=bollywood
+```
+
+This opens Amazon Music's own catalogue for playback under the user's Amazon Music subscription. It is a discovery shortcut only: Amazon Music streaming is not exposed as a reusable FLAC URL, and its protected Ultra HD playback is not routed through this addon's `/stream` endpoint.
+
+The Amazon shortcut is deliberately not listed as a FLAC source in the manifest. Internet Archive and Jamendo remain the direct FLAC sources, with their existing licence checks.
