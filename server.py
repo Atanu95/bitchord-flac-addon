@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.14.0",
+    "version": "1.15.0",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -49,6 +49,7 @@ MANIFEST = {
             "options": [
                 {"label": "All Music", "value": "all"},
                 {"label": "Bollywood (2008–2026)", "value": "bollywood"},
+                {"label": "English (All Genres, 2000–2026)", "value": "english"},
             ],
         },
     ],
@@ -58,7 +59,8 @@ IA_SEARCH = "https://archive.org/advancedsearch.php"
 IA_METADATA = "https://archive.org/metadata/{}"
 JAMENDO_TRACKS = "https://api.jamendo.com/v3.0/tracks/"
 JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID", "").strip()
-MIN_RELEASE_YEAR = 2008
+MIN_RELEASE_YEAR = 2000
+DEFAULT_RELEASE_YEAR = 2008
 MAX_RELEASE_YEAR = 2026
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "Layz-Add-On/1.14 BitChord"})
@@ -576,19 +578,30 @@ def search_docs(query, rows, year_from=MIN_RELEASE_YEAR, year_to=MAX_RELEASE_YEA
     return list(merged.values())
 
 
+def normalize_artist_query(query):
+    """Correct a common spelling of The Weeknd while preserving the rest of the search."""
+    return re.sub(r"\b(?:the\s+)?weekand\b", "The Weeknd", (query or "").strip(), flags=re.IGNORECASE)
+
+
 def build_genre_query(query, genre):
-    """Expand a source search for a selected catalogue genre without changing the user's query."""
+    """Expand a selected genre search while retaining the user's artist/song terms."""
     clean_query = (query or "").strip()
     if genre == "bollywood" and not re.search(r"\bbollywood\b", clean_query, re.IGNORECASE):
         return f"Bollywood {clean_query}".strip()
+    if genre == "english" and not re.search(r"\benglish\b", clean_query, re.IGNORECASE):
+        return f"English {clean_query}".strip()
     return clean_query
 
 
 def build_search_variants(query, genre):
-    """Try the genre-qualified search first, then the original query as a broader fallback."""
+    """Search the exact artist/title first for English, with a language-qualified fallback."""
     original = (query or "").strip()
     expanded = build_genre_query(original, genre)
-    return [expanded] if expanded.casefold() == original.casefold() else [expanded, original]
+    if expanded.casefold() == original.casefold():
+        return [original]
+    if genre == "english":
+        return [original, expanded]
+    return [expanded, original]
 
 
 def do_search():
@@ -596,9 +609,14 @@ def do_search():
     if not query:
         return jsonify({"tracks": []})
 
+    genre_mode = (request.args.get("genre") or "all").strip().lower()
+    if genre_mode not in ("all", "bollywood", "english"):
+        return jsonify({"tracks": [], "error": "genre must be all, bollywood or english"}), 400
+    default_year_from = MIN_RELEASE_YEAR if genre_mode == "english" else DEFAULT_RELEASE_YEAR
+
     try:
         limit = min(max(int(request.args.get("limit", "10")), 1), MAX_RESULTS)
-        year_from = int(request.args.get("year_from", str(MIN_RELEASE_YEAR)))
+        year_from = int(request.args.get("year_from", str(default_year_from)))
         year_to = int(request.args.get("year_to", str(MAX_RELEASE_YEAR)))
     except ValueError:
         return jsonify({"tracks": [], "error": "limit, year_from and year_to must be integers"}), 400
@@ -614,10 +632,8 @@ def do_search():
     if quality_mode not in ("lossless", "high", "low", "hires"):
         quality_mode = "lossless"
 
-    genre_mode = (request.args.get("genre") or "all").strip().lower()
-    if genre_mode not in ("all", "bollywood"):
-        return jsonify({"tracks": [], "error": "genre must be all or bollywood"}), 400
-    search_query = build_genre_query(query, genre_mode)
+    search_term = normalize_artist_query(query)
+    search_query = build_genre_query(search_term, genre_mode)
 
     source_mode = (request.args.get("source") or "all").strip().lower()
     if source_mode not in ("all", "archive", "internet-archive", "internet_archive", "jamendo"):
@@ -628,6 +644,7 @@ def do_search():
     debug_enabled = request.args.get("debug") == "1"
     debug = {
         "query": query,
+        "normalizedQuery": search_term,
         "sourceMode": source_mode,
         "qualityMode": quality_mode,
         "genreMode": genre_mode,
@@ -662,7 +679,7 @@ def do_search():
     combined = []
     if use_archive:
         docs_by_identifier = {}
-        for archive_query in build_search_variants(query, genre_mode):
+        for archive_query in build_search_variants(search_term, genre_mode):
             try:
                 found_docs = search_docs(archive_query, SEARCH_ROWS, year_from, year_to)
             except (requests.RequestException, ValueError) as exc:
@@ -675,7 +692,7 @@ def do_search():
                     docs_by_identifier.setdefault(str(identifier), doc)
         docs = list(docs_by_identifier.values())[:SEARCH_ROWS]
         ranked = [
-            (relevance_score(query, doc), doc)
+            (relevance_score(search_term, doc), doc)
             for doc in docs
         ]
         ranked = [(score, doc) for score, doc in ranked if score > 0]
@@ -721,7 +738,7 @@ def do_search():
         }
         accepted_jamendo_ids = set()
         jamendo_relevant_count = 0
-        jamendo_variants = build_search_variants(query, genre_mode)
+        jamendo_variants = build_search_variants(search_term, genre_mode)
         for variant_index, jamendo_query in enumerate(jamendo_variants):
             jamendo_tracks, variant_stats = jamendo_search(
                 jamendo_query, limit, year_from, year_to, probe_header=True
@@ -741,7 +758,7 @@ def do_search():
                     "creator": track.get("artist", ""),
                     "album": track.get("album", ""),
                 }
-                score = relevance_score(query, doc_for_score)
+                score = relevance_score(search_term, doc_for_score)
                 if score <= 0:
                     jamendo_irrelevant_skipped += 1
                     continue
