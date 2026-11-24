@@ -28,9 +28,18 @@ jobs:
           import server
 
           manifest_file = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
-          assert manifest_file["version"] == "1.13.2"
-          assert server.MANIFEST["version"] == "1.13.2"
+          assert manifest_file["version"] == "1.14.0"
+          assert server.MANIFEST["version"] == "1.14.0"
+          from urllib.parse import parse_qs, urlparse
+
           assert server.build_genre_query("Arijit Singh", "bollywood") == "Bollywood Arijit Singh"
+          response = server.app.test_client().get(
+              "/amazon-music-search?q=Arijit%20Singh&genre=bollywood"
+          )
+          assert response.status_code == 302
+          amazon_location = urlparse(response.headers["Location"])
+          assert amazon_location.netloc == "music.amazon.in"
+          assert parse_qs(amazon_location.query)["q"] == ["Bollywood Arijit Singh"]
           assert server.build_genre_query("Bollywood hits", "bollywood") == "Bollywood hits"
           assert server.build_genre_query("Arijit Singh", "all") == "Arijit Singh"
           assert server.build_search_variants("Arijit Singh", "bollywood") == [
