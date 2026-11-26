@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.15.0",
+    "version": "1.15.1",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -82,6 +82,14 @@ ALLOWED_LICENSE_HINTS = (
     "creativecommons.org/licenses/by-nc-nd/",
 )
 STOP_WORDS = {"a", "an", "and", "the", "of", "to", "in", "on", "for", "with", "by", "from"}
+# For these explicit artist searches, match the credited artist rather than a song title
+# that happens to contain the artist's name.
+ARTIST_QUERY_ALIASES = {
+    "pitbull": ({"pitbull"}, {"armando", "christian", "perez"}),
+    "akon": ({"akon"}, {"aliaune", "damala", "badara", "akon", "thiam"}),
+    "sean paul": ({"sean", "paul"},),
+    "weeknd": ({"weeknd"},),
+}
 
 
 def num(value):
@@ -179,6 +187,15 @@ def relevance_score(query, doc):
     if album_tokens and q_tokens & album_tokens:
         score += 5
     return score
+
+
+def artist_query_matches(query, artist):
+    """Require credited-artist metadata for the explicitly supported artist searches."""
+    aliases = ARTIST_QUERY_ALIASES.get(normalized(query))
+    if aliases is None:
+        return True
+    artist_tokens = tokens(artist)
+    return any(alias.issubset(artist_tokens) for alias in aliases)
 
 
 def flac_info(url):
@@ -695,7 +712,10 @@ def do_search():
             (relevance_score(search_term, doc), doc)
             for doc in docs
         ]
-        ranked = [(score, doc) for score, doc in ranked if score > 0]
+        ranked = [
+            (score, doc) for score, doc in ranked
+            if score > 0 and artist_query_matches(search_term, as_text(doc.get("creator")))
+        ]
         ranked.sort(key=lambda pair: pair[0], reverse=True)
         debug["archiveDocs"] = len(docs)
         debug["relevantDocs"] = len(ranked)
@@ -759,7 +779,7 @@ def do_search():
                     "album": track.get("album", ""),
                 }
                 score = relevance_score(search_term, doc_for_score)
-                if score <= 0:
+                if score <= 0 or not artist_query_matches(search_term, track.get("artist", "")): 
                     jamendo_irrelevant_skipped += 1
                     continue
                 track_id = str(track.get("id") or "")
