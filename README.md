@@ -1,6 +1,6 @@
 # Layz Add On — BitChord FLAC Sources
 
-Current version: **1.15.1**
+Current version: **1.15.2**
 
 A small Python/Flask HTTP addon for BitChord. It searches Internet Archive and, when configured, Jamendo for licensed FLAC streams.
 
@@ -98,7 +98,7 @@ Jamendo API use is subject to Jamendo's API terms and each track's Creative Comm
 
 ## Bollywood discovery (2008–2026)
 
-The manifest includes **Bollywood (2008–2026)** and **English (All Genres, 2000–2026)** genre presets. English searches support artist names such as Pitbull, Akon, Sean Paul, and The Weeknd. The addon also corrects the common “Weekand” spelling to “The Weeknd”. It first searches with the `Bollywood` genre term; if no relevant tracks are found, it retries using the original artist/song query. Internet Archive also receives both query forms. Jamendo results are deduplicated and must match the requested title or artist. Results still come only from configured FLAC catalogues and must pass their source-specific licence checks; this is not a complete commercial Bollywood catalogue. English mode searches the same licensed FLAC catalogues, not commercial-label catalogues, so it cannot guarantee mainstream recordings. Searches for Pitbull, Akon, Sean Paul, and The Weeknd require the credited artist metadata to match (including known Pitbull/Akon name variants), preventing unrelated artists from being returned just because the search word appears in a title.
+The manifest includes **Bollywood (2008–2026)** and **English (All Genres, 2000–2026)** genre presets. English searches support artist names such as Pitbull, Akon, Sean Paul, and The Weeknd. The addon also corrects the common “Weekand” spelling to “The Weeknd”. It first searches with the `Bollywood` genre term; if no relevant tracks are found, it retries using the original artist/song query. Internet Archive also receives both query forms. Jamendo results are deduplicated and must match the requested title or artist. Results still come only from configured FLAC catalogues and must pass their source-specific licence checks; this is not a complete commercial Bollywood catalogue. English mode searches the same licensed FLAC catalogues, not commercial-label catalogues, so it cannot guarantee mainstream recordings. Searches for Pitbull, Akon, Sean Paul, and The Weeknd require the credited artist name to match (including known Pitbull/Akon name variants and featuring credits), preventing unrelated artists from being returned just because the search word appears in a title.
 
 For broader discovery of commercial Bollywood music, use the official YouTube Music search redirect:
 
