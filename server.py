@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.15.1",
+    "version": "1.15.2",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -63,7 +63,7 @@ MIN_RELEASE_YEAR = 2000
 DEFAULT_RELEASE_YEAR = 2008
 MAX_RELEASE_YEAR = 2026
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "Layz-Add-On/1.14 BitChord"})
+SESSION.headers.update({"User-Agent": "Layz-Add-On/1.15.2 BitChord"})
 
 # Keep the free Render instance responsive: don't inspect dozens of archive
 # records for every keystroke/search.
@@ -85,10 +85,10 @@ STOP_WORDS = {"a", "an", "and", "the", "of", "to", "in", "on", "for", "with", "b
 # For these explicit artist searches, match the credited artist rather than a song title
 # that happens to contain the artist's name.
 ARTIST_QUERY_ALIASES = {
-    "pitbull": ({"pitbull"}, {"armando", "christian", "perez"}),
-    "akon": ({"akon"}, {"aliaune", "damala", "badara", "akon", "thiam"}),
-    "sean paul": ({"sean", "paul"},),
-    "weeknd": ({"weeknd"},),
+    "pitbull": ("pitbull", "armando christian perez"),
+    "akon": ("akon", "aliaune damala badara akon thiam"),
+    "sean paul": ("sean paul",),
+    "the weeknd": ("the weeknd", "weeknd"),
 }
 
 
@@ -190,12 +190,18 @@ def relevance_score(query, doc):
 
 
 def artist_query_matches(query, artist):
-    """Require credited-artist metadata for the explicitly supported artist searches."""
+    """Require an actual credited-artist name, not a coincidental title or tribute credit."""
     aliases = ARTIST_QUERY_ALIASES.get(normalized(query))
     if aliases is None:
         return True
-    artist_tokens = tokens(artist)
-    return any(alias.issubset(artist_tokens) for alias in aliases)
+    credited = normalized(artist)
+    if not credited:
+        return False
+    credit_suffixes = (" feat ", " featuring ", " ft ", " with ")
+    for alias in aliases:
+        if credited == alias or any(credited.startswith(alias + suffix) for suffix in credit_suffixes):
+            return True
+    return False
 
 
 def flac_info(url):
