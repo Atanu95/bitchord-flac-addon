@@ -1,7 +1,7 @@
 {
   "id": "bitchord-internet-archive-flac",
   "name": "Layz Add On",
-  "version": "1.15.2",
+  "version": "1.15.3",
   "resources": [
     "search",
     "stream"
@@ -11,15 +11,15 @@
     {
       "key": "quality",
       "type": "select",
-      "default": "lossless",
+      "default": "hires",
       "options": [
         {
-          "label": "Lossless",
-          "value": "lossless"
+          "label": "Best Available (Hi-Res first, FLAC fallback)",
+          "value": "hires"
         },
         {
-          "label": "Hi-Res (24-bit / 96 kHz)",
-          "value": "hires"
+          "label": "Lossless FLAC (any resolution)",
+          "value": "lossless"
         }
       ]
     },
