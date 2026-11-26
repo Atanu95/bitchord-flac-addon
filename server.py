@@ -17,7 +17,7 @@ app = Flask(__name__)
 MANIFEST = {
     "id": "bitchord-internet-archive-flac",
     "name": "Layz Add On",
-    "version": "1.15.2",
+    "version": "1.15.3",
     # Keep this declaration only if BitChord requires it for the addon protocol.
     # It is a capability declaration, not an authentication implementation.
     "bitchordAuth": True,
@@ -26,10 +26,10 @@ MANIFEST = {
         {
             "key": "quality",
             "type": "select",
-            "default": "lossless",
+            "default": "hires",
             "options": [
-                {"label": "Lossless", "value": "lossless"},
-                {"label": "Hi-Res (24-bit / 96 kHz)", "value": "hires"},
+                {"label": "Best Available (Hi-Res first, FLAC fallback)", "value": "hires"},
+                {"label": "Lossless FLAC (any resolution)", "value": "lossless"},
             ],
         },
         {
@@ -260,6 +260,20 @@ def quality_label(sample_rate, bit_depth):
     hi_res = is_hires(sample_rate, bit_depth)
     label = "Hi-Res Lossless" if hi_res else "Lossless"
     return label + (f" · {' / '.join(details)}" if details else "")
+
+
+def sort_quality_entries(entries):
+    """Put verified Hi-Res FLAC first, then retain all other available FLAC results."""
+    return sorted(
+        entries,
+        key=lambda entry: (
+            int(is_hires(entry[1].get("sampleRate"), entry[1].get("bitDepth"))),
+            entry[1].get("bitDepth") or 0,
+            entry[1].get("sampleRate") or 0,
+            entry[0],
+        ),
+        reverse=True,
+    )
 
 
 def inspect(identifier, item, probe_header=True):
@@ -819,26 +833,18 @@ def do_search():
         1 for _score, track in combined
         if is_hires(track.get("sampleRate"), track.get("bitDepth"))
     )
-    if quality_mode == "hires":
-        combined = [
-            entry for entry in combined
-            if is_hires(entry[1].get("sampleRate"), entry[1].get("bitDepth"))
-        ]
-
+    # Hi-Res mode is a preference, not a hard filter: keep standard FLAC
+    # available whenever no verified 24-bit / 96 kHz version exists.
     debug["flacMatches"] = raw_flac_matches
     debug["hiResMatches"] = raw_hires_matches
     debug["qualityMatches"] = len(combined)
-    debug["qualityFilteredOut"] = raw_flac_matches - len(combined)
-
-    combined.sort(
-        key=lambda entry: (
-            int((entry[1].get("bitDepth") or 0) >= 24),
-            entry[1].get("bitDepth") or 0,
-            entry[1].get("sampleRate") or 0,
-            entry[0],
-        ),
-        reverse=True,
+    debug["qualityFilteredOut"] = 0
+    debug["qualityPreference"] = (
+        "hires-first-with-flac-fallback" if quality_mode == "hires" else "all-flac"
     )
+    debug["hiResFallbackUsed"] = quality_mode == "hires" and raw_hires_matches == 0
+
+    combined = sort_quality_entries(combined)
 
     tracks = []
     seen_recordings = set()
