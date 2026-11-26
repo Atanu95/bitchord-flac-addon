@@ -28,8 +28,8 @@ jobs:
           import server
 
           manifest_file = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
-          assert manifest_file["version"] == "1.15.1"
-          assert server.MANIFEST["version"] == "1.15.1"
+          assert manifest_file["version"] == "1.15.2"
+          assert server.MANIFEST["version"] == "1.15.2"
           from urllib.parse import parse_qs, urlparse
 
           assert server.build_genre_query("Arijit Singh", "bollywood") == "Bollywood Arijit Singh"
@@ -67,14 +67,18 @@ jobs:
               {"title": "Electronic Dreams", "creator": "Unknown Artist"}
           ) == 0
           assert server.artist_query_matches("Pitbull", "Pitbull")
+          assert server.artist_query_matches("Pitbull", "Pitbull feat. Ne-Yo")
           assert server.artist_query_matches("Pitbull", "Armando Christian Perez")
           assert not server.artist_query_matches("Pitbull", "Random Artist")
           assert not server.artist_query_matches("Pitbull", "Pitbull Tribute Band")
           assert server.artist_query_matches("Akon", "Akon")
+          assert server.artist_query_matches("Akon", "Akon featuring Eminem")
           assert server.artist_query_matches("Sean Paul", "Sean Paul")
+          assert server.artist_query_matches("Sean Paul", "Sean Paul ft. Dua Lipa")
           assert server.artist_query_matches("The Weeknd", "The Weeknd")
-          assert server.artist_query_matches("The Weeknd", "Weekand")
+          assert server.artist_query_matches("The Weeknd", "The Weeknd with Ariana Grande")
           assert not server.artist_query_matches("The Weeknd", "Other Artist")
+          assert server.artist_query_matches("some song title", "Any Artist")
           assert server.artist_query_matches("some song title", "Any Artist")
           assert server.jamendo_license_is_allowed({
               "license_ccurl": "https://creativecommons.org/licenses/by/4.0/"
