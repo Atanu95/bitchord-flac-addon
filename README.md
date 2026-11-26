@@ -1,6 +1,6 @@
 # Layz Add On — BitChord FLAC Sources
 
-Current version: **1.15.2**
+Current version: **1.15.3**
 
 A small Python/Flask HTTP addon for BitChord. It searches Internet Archive and, when configured, Jamendo for licensed FLAC streams.
 
@@ -8,8 +8,8 @@ A small Python/Flask HTTP addon for BitChord. It searches Internet Archive and, 
 
 - Searches release years **2008–2026** by default for All Music and Bollywood. The **English (All Genres)** preset searches **2000–2026** to include early-2000s artists. The API accepts narrower `year_from` and `year_to` values within the supported 2000–2026 range.
 - Returns actual FLAC streams only. It does not convert MP3/AAC/Opus into FLAC.
-- **Lossless** returns eligible FLAC streams.
-- **Hi-Res** is strict: a file must have verified FLAC STREAMINFO of at least **24-bit and 96 kHz**. Unknown metadata is not labelled Hi-Res.
+- **Lossless FLAC (any resolution)** returns eligible FLAC streams. Both quality modes keep all eligible FLAC results; Best Available ranks verified Hi-Res first.
+- **Best Available** prefers files with verified FLAC STREAMINFO of at least **24-bit and 96 kHz**, but falls back to ordinary FLAC when no verified Hi-Res result is available. It never converts a lossy file into FLAC.
 - Internet Archive items must pass the addon's explicit public-domain/Creative Commons licence check.
 - Jamendo tracks must have an explicit recognised Creative Commons licence URL and a release date inside the requested year range.
 
