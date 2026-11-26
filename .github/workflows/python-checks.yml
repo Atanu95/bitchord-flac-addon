@@ -28,8 +28,8 @@ jobs:
           import server
 
           manifest_file = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
-          assert manifest_file["version"] == "1.15.2"
-          assert server.MANIFEST["version"] == "1.15.2"
+          assert manifest_file["version"] == "1.15.3"
+          assert server.MANIFEST["version"] == "1.15.3"
           from urllib.parse import parse_qs, urlparse
 
           assert server.build_genre_query("Arijit Singh", "bollywood") == "Bollywood Arijit Singh"
@@ -88,5 +88,15 @@ jobs:
           assert server.is_hires(192000, 24)
           assert not server.is_hires(48000, 24)
           assert not server.is_hires(96000, 16)
+          normal_flac = {"sampleRate": 44100, "bitDepth": 16, "title": "Standard FLAC"}
+          hires_flac = {"sampleRate": 96000, "bitDepth": 24, "title": "Hi-Res FLAC"}
+          best_available = server.sort_quality_entries([
+              (100, normal_flac),
+              (50, hires_flac),
+          ])
+          assert len(best_available) == 2
+          assert best_available[0][1]["title"] == "Hi-Res FLAC"
+          assert best_available[1][1]["title"] == "Standard FLAC"
+          assert server.MANIFEST["settings"][0]["default"] == "hires"
           print("Layz Add On policy checks passed.")
           PY
